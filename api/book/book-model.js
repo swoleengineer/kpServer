@@ -39,6 +39,10 @@ const bookSchema = new Schema({
   },
   pictures: [pictureSchema],
   affiliate_link: String,
+  active: {
+    type: Boolean,
+    default: false
+  },
   description: String,
   topics: [topicSchema],
   publish_date: {

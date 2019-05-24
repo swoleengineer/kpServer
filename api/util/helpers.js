@@ -1,4 +1,6 @@
 const Raven = require('raven');
+const sendEmail = require('./sendEmails');
+const jwt = require('jsonwebtoken');
 
 module.exports = {
   returnObjectsArray: arr => ({ amount: arr.length, data: [...arr] }),
@@ -24,4 +26,16 @@ module.exports = {
       next();
     });
   },
+  getToken: (user) => {
+    const payload = {
+      iss: 'keenpages.com',
+      role: user.role,
+      sub: user._id,
+      user,
+      exp: moment().add(10, 'days').unix()
+    }
+    return jwt.sign(payload, process.env.SECRET);
+  },
+  sendEmail,
+  acceptableTypes: ['Book', 'Question', 'Topic']
 }

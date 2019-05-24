@@ -1,5 +1,5 @@
 const Topic = require('./topic-model');
-const { handleErr } = require('../util/helpers');
+const { handleErr, returnObjectsArray } = require('../util/helpers');
 const axios = require('axios');
 const async = require('async');
 const { has } = require('lodash');
@@ -10,8 +10,39 @@ const headers = {
 const wordApi = word => axios.get(`${url}${word}`, { headers });
 
 module.exports = {
-  getOne: (req, res) => {},
-  getMany: (req, res) => {},
+  getOne: (req, res) => {
+    const { id } = req.params;
+    if (!id) {
+      return handleErr(res, 400, 'Please try your request again. Missing :id property', false);
+    }
+    Topic.findById(id).populate('similar').exec().then(
+      topic => !topic ? handleErr(res, 404,'Topic not found.', false) : res.json(topic),
+      err => handleErr(res, 500, 'Error retriving topic.', err)
+    );
+  },
+  getAll: (req, res) => {
+    Topic.find().populate('similar').exec().then(
+      topics => res.json(returnObjectsArray(topics)),
+      err => handleErr(res, 500)
+    );
+  },
+  search: (req, res) => {
+    const { text } = req.query;
+    if (!text) {
+      return handleErr(res, 400, 'You must type something in to perform a search.', false);
+    }
+    const hit = new RegExp("^" + text, "i")
+    const query = {
+      $or: [
+        { name: hit },
+        { description: hit }
+      ]
+    };
+    Topic.find(query).populate('similar').exec().then(
+      topics => res.json(returnObjectsArray(topics)),
+      err => handleErr(res, 501, 'Server error searching for your topics', err)
+    )
+  },
   add: (req, res) => {
     const { name, description } = req.body;
     const validate = done => {
@@ -119,5 +150,16 @@ module.exports = {
       res.json(topic);
     })
   },
-  remove: (req, res) => {}
+  remove: (req, res) => {
+    const { id } = req.params;
+    if (!id) {
+      return handleErr(res, 400, 'Please try your request again. Missing :id property', false);
+    }
+    Topic.findByIdAndRemove(id, (err, response) => {
+      if (err) {
+        return handleErr(res, 500);
+      }
+      res.json(response);
+    })
+  }
 }

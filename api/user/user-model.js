@@ -6,14 +6,52 @@ const userSchema = new Schema({
   profile: {
     first_name: String,
     last_name: String,
-    picture: String
+    picture: {
+      public_id: String,
+      link: String
+    }
   },
   email: {
     type: String,
     required: true,
     unique: true
   },
-  password: String
+  username: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  password: String,
+  role: {
+    type: String,
+    enum: ['user', 'admin'],
+    default: 'user'
+  },
+  resetPasswordToken: String,
+  resetPasswordExpires: {
+    type: Date,
+    default: Date.now
+  },
+  notification_new_book: {
+    type: Boolean,
+    default: true
+  },
+  notification_new_question: {
+    type: Boolean,
+    default: true
+  },
+  notification_book_comment: {
+    type: Boolean,
+    default: true
+  },
+  notification_question_comment: {
+    type: Boolean,
+    default: true
+  },
+  created: {
+    type: Date,
+    default: new Date()
+  }
 });
 
 userSchema.methods.toJSON = function() {

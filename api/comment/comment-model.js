@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+const { acceptableTypes } = require('../util/helpers')
 
 const commentSchema = new Schema({
   author: {
@@ -10,7 +11,7 @@ const commentSchema = new Schema({
   parentId: String,
   parentType: {
     type: String,
-    enum: ['Book', 'Question', 'Topic']
+    enum: acceptableTypes
   },
   created: {
     type: Date,
