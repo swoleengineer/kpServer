@@ -1,6 +1,6 @@
 const Sentry = require('@sentry/node');
 const { omit } = require('lodash');
-const sendEmail = require('./sendEmails');
+const sendEmail = require('./sendEmail');
 const jwt = require('jsonwebtoken');
 
 module.exports = {

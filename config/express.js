@@ -3,7 +3,7 @@ const logger = require('morgan');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const Sentry = require('@sentry/node');
-Sentry.init({ dsn: Process.env.SENTRY_DSN });
+Sentry.init({ dsn: process.env.SENTRY_DSN });
 
 
 
@@ -13,7 +13,6 @@ module.exports = (app, config) => {
   app.use(bodyParser.json());
   app.use(cors());
   app.use(static(`${config.rootPath}/public`));
-  app.use(Raven.errorHandler());
   app.use((req, res, next) => {
     if (req.body) {
       console.log('received fr body.', req.body)

@@ -6,7 +6,6 @@ router.get('/single/:id', controller.getOne);
 router.get('/many/:topicId', controller.getByTopic);
 router.get('/all', controller.getAll);
 router.post('/addBegin', isLoggedIn, controller.add);
-router.post('/addEnd', isLoggedIn, controller.addEnd);
 router.post('/edit/:id', isLoggedIn, controller.edit);
 router.delete('/delete/:id', isLoggedIn, controller.remove);
 router.get('/search', controller.search);

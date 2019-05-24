@@ -101,6 +101,12 @@ module.exports = {
       err => handleErr(res, 501, 'Server error finding your book.', err)
     );
   },
+  getByAuthor: (req, res) => {
+    Book.find({ author: req.params.id }).populate('author topics.agreed topics.topic').exec().then(
+      books => res.json(returnObjectsArray(books)),
+      err => handleErr(res, 500, 'Server error retrieving books for this author.', err)
+    )
+  },
   getByTopic: (req, res) => {
     // search books by topic
     const { topicId } = req.params;
