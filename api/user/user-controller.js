@@ -6,6 +6,7 @@ const { waterfall } = require('async');
 const jwt = require('jsonwebtoken');
 const moment = require('moment');
 const { omit } = require('lodash');
+const { addToList, MEMBER } = require('../util/mailchimp')
 
 module.exports = {
   register: (req, res) => {
@@ -56,7 +57,16 @@ module.exports = {
       })
     );
 
-    waterfall([validate, createUser, notify], (err, user) => {
+    const addToMailChimp = (user, done) => addToList(user.email, MEMBER).then(
+      () => done(null, user),
+      err => done({
+        status: 503,
+        message: 'Your account has been created but we could not add your email to our list.',
+        data: err
+      })
+    )
+
+    waterfall([validate, createUser, notify, addToMailChimp], (err, user) => {
       if (err) {
         return handleErr(res, err.status || 500, err.message || 'Could not create your account', err)
       }

@@ -1,4 +1,5 @@
-const Raven = require('raven');
+const Sentry = require('@sentry/node');
+const { omit } = require('lodash');
 const sendEmail = require('./sendEmails');
 const jwt = require('jsonwebtoken');
 
@@ -6,12 +7,14 @@ module.exports = {
   returnObjectsArray: arr => ({ amount: arr.length, data: [...arr] }),
   handleErr: (res, status, message, data) => {
     console.log(status, message, data);
-    Raven.captureException({ status, message, data });
-    
-    if (status === 500) return res.status(500).send({ message: data && data.name === 'MongoError' &&data.errmsg.includes('duplicate')
-      ? 'Something here is a duplicate of a previous one.'
-      : 'Server Error with this request'});
-    return res.status(status).send({ message });
+    Sentry.captureException({ status, message, data });
+    if (status === 500) return res.status(500).send({
+      message: data && data.name === 'MongoError' && data.errmsg.includes('duplicate')
+        ? 'Something here is a duplicate of a previous one.'
+        : message || 'Server Error with this request',
+      data
+      });
+    return res.status(status).send({ message, data });
   },
   undefinedRoute: (req, res) => res.status(404).send({ message: 'You have reached an undefined route. The KeenPages server does not have this endpoint configured.' }),
   isLoggedIn: (req, res, next) => {
@@ -31,7 +34,7 @@ module.exports = {
       iss: 'keenpages.com',
       role: user.role,
       sub: user._id,
-      user,
+      user: omit(user, ['resetPasswordExpires', 'resetPasswordToken', 'role', 'password']),
       exp: moment().add(10, 'days').unix()
     }
     return jwt.sign(payload, process.env.SECRET);

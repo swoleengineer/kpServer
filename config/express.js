@@ -2,12 +2,13 @@ const { static } = require('express');
 const logger = require('morgan');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const Raven = require('raven');
-Raven.config(process.env.RAVEN_DSN).install();
+const Sentry = require('@sentry/node');
+Sentry.init({ dsn: Process.env.SENTRY_DSN });
+
 
 
 module.exports = (app, config) => {
-  app.use(Raven.requestHandler());
+  app.use(Sentry.Handlers.requestHandler());
   app.use(logger('dev'));
   app.use(bodyParser.json());
   app.use(cors());
