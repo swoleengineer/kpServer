@@ -19,9 +19,9 @@ const processEnd = res => (err, data) => {
 
 module.exports = {
   add: (req, res) => {
-    const { title, author, description, topics, isbn } = req.body;
+    const { title, author, description, topics, isbn, amazon_link } = req.body;
     const validate = done => {
-      const errors = Object.keys({ title, author, description, topics, isbn }).reduce((acc, curr) => [
+      const errors = Object.keys({ title, author, description, topics, isbn, amazon_link }).reduce((acc, curr) => [
         ...acc,
         ...(!req.body[curr] ? [curr] : [])
       ], []);
@@ -53,13 +53,31 @@ module.exports = {
       })
     }
 
+    const checkBook = (writer, done) => Book.findOne({ amazon_link: amazon_link.toLowerCase() }).exec().then(
+      book => {
+        if (!book) {
+          return done(null, writer);
+        }
+        return done({
+          status: 400,
+          message: 'A book already exists on Keen Pages with this ISBN.',
+          data: book
+        })
+      },
+      err => done({
+        status: 503,
+        message: 'Server error verifying if this book already exists.',
+        data: err
+      })
+    )
     const processBook = (writer, done) => {
       const newBook = new Book({
         title,
         author: writer,
         description,
         topics: topics.map(topic => ({ topic })),
-        isbn
+        isbn: isbn.toLowerCase(),
+        amazon_link: amazon_link.toLowerCase()
       });
       newBook.save((err, book) => {
         if (err) {
@@ -78,7 +96,7 @@ module.exports = {
       () => done(null, book)
     )
 
-    waterfall([validate, processAuthor, processBook, notify], processEnd(res))
+    waterfall([validate, processAuthor, checkBook, processBook, notify], processEnd(res))
   },
   getOne: (req, res) => {
     const { id } = req.params;

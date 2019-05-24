@@ -39,6 +39,7 @@ const bookSchema = new Schema({
   },
   pictures: [pictureSchema],
   affiliate_link: String,
+  amazon_link: String,
   active: {
     type: Boolean,
     default: false
@@ -48,7 +49,10 @@ const bookSchema = new Schema({
   publish_date: {
     type: Date
   },
-  isbn: String,
+  isbn: {
+    type: String,
+    unique: true
+  },
   likes: [{
     type: Schema.Types.ObjectId,
     ref: 'User'
