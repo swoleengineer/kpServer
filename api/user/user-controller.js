@@ -12,6 +12,7 @@ module.exports = {
   register: (req, res) => {
     const { profile, email, username, password } = req.body;
     const validate = done => {
+      console.log('About to validate')
       if (!profile || !email || !username || !password) {
         return({
           status: 400,
@@ -24,18 +25,25 @@ module.exports = {
           if (!user) {
             return done(null);
           }
+          console.log(user)
           return done({
             status: 400,
             message: `A user already exists with this ${user.email === email ? 'email address' : 'username'}.`,
             data: false
-          });
+          }, user);
         },
         err => handleErr(res, 500)
       )
     };
 
     const createUser = done => {
-      const newUser = new User({ profile, email, username, password });
+      console.log('Creating user after validating')
+      const newUser = new User({
+        profile,
+        email: email.toLowerCase(),
+        username: username.toLowerCase(),
+        });
+      newUser.password = newUser.generateHash(password);
       newUser.save((err, user) => {
         if (err) {
           return({
@@ -48,7 +56,7 @@ module.exports = {
       });
     }
 
-    const notify = (user, done) => register(user).then(
+    const notify = (user, done) => console.log('sending email') || register(user).then(
       () => done(null, user),
       err => done({
         status: 503,
@@ -57,7 +65,7 @@ module.exports = {
       })
     );
 
-    const addToMailChimp = (user, done) => addToList(user.email, MEMBER).then(
+    const addToMailChimp = (user, done) => console.log('adding to mailchimp') || addToList(user.email, MEMBER).then(
       () => done(null, user),
       err => done({
         status: 503,
@@ -66,13 +74,16 @@ module.exports = {
       })
     )
 
+    console.log('About to call waterfall')
+
     waterfall([validate, createUser, notify, addToMailChimp], (err, user) => {
+      console.log('registration completed', err, user)
       if (err) {
         return handleErr(res, err.status || 500, err.message || 'Could not create your account', err)
       }
-      res.json({
+      res.status(201).send({
         user: omit(user, ['resetPasswordExpires', 'resetPasswordToken', 'role', 'password']),
-        jwt: createToken(user)
+        jwt: getToken(user)
       })
     })
   },

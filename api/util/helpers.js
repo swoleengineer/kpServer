@@ -2,6 +2,7 @@ const Sentry = require('@sentry/node');
 const { omit } = require('lodash');
 const sendEmail = require('./sendEmail');
 const jwt = require('jsonwebtoken');
+const moment = require('moment');
 
 module.exports = {
   returnObjectsArray: arr => ({ amount: arr.length, data: [...arr] }),

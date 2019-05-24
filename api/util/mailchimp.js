@@ -4,24 +4,27 @@ const mailchimp = new Mailchimp(process.env.MAILCHIMP_API);
 const getList = (type) => {
   switch(type){
     case 'MEMBER':
-      return MAILCHIMP_MEMBERS_LIST;
+      return process.env.MAILCHIMP_MEMBERS_LIST;
     default:
-      return MAILCHIMP_MEMBERS_LIST;
+      return process.env.MAILCHIMP_MEMBERS_LIST;
   }
 }
 
 module.exports = {
   MEMBER: 'MEMBER',
   addToList: (email, type) => {
+    console.log('about to add to mailchimp', email, type);
     const list = getList(type);
+    console.log('list', list)
     return new Promise((resolve, reject) => {
+      console.log('in the new promise', mailchimp, mailchimp.members.create)
       mailchimp.members.create(list, {
         email_address: email,
         merge_fields: {
           EMAIL: email
         },
         status: 'subscribed'
-      }).then(user => resolve(user), e => reject(e));
+      }).then(user => console.log('mc success') || resolve(user), e => console.log('mc - failr') || reject(e));
     });
   },
   getMembers: (type) => {

@@ -1,4 +1,4 @@
-const { addBook } = require('./emails/');
+const { addBook, welcome } = require('./emails/');
 const sgMail = require("@sendgrid/mail");
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 const sendToUser = (type, emailRecipient, subject, body) => {
@@ -24,5 +24,5 @@ const getTo = user => ({
 module.exports = { 
   bookAdded: (data) => sendToUser(addbook(data.book, data.user), data.user.email),
   resetPass: () => {},
-  register: () => {}
+  register: (user) => sendToUser(welcome(user), user.email)
 }
