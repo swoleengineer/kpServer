@@ -9,6 +9,23 @@ const { omit } = require('lodash');
 const { addToList, MEMBER } = require('../util/mailchimp')
 
 module.exports = {
+  getUserDetails: (req, res) => {
+    const { id } = req.params;
+    const { role } = req.decoded;
+    const { user: { _id }} = req.user;
+    if (!id === _id && role !== 'admin') {
+      return handleErr(res, 403, 'You are unauthorized to access this resource.', false);
+    }
+    User.findById(id).exec().then(
+      user => {
+        if (!user) {
+          return handleErr(res, 404, 'User details not found.', user);
+        }
+        res.json(user);
+      },
+      err => handleErr(res, 500, 'Server error retrieving the user information.', err)
+    )
+  },
   register: (req, res) => {
     const { profile, email, username, password } = req.body;
     const validate = done => {
@@ -124,7 +141,7 @@ module.exports = {
     });
   },
   forgotPass: (req, res) => {
-    const { email, href } = req.body;
+    const { email } = req.body;
     const createToken = done => crypto.randomBytes(20, (err, buf) => done(err, buf.toString('hex')));
 
     const addToUser = (token, done) => User.findOne({ email }, (err, user) => {
@@ -138,7 +155,7 @@ module.exports = {
       ));
     });
 
-    const emailUser = (user, token, done) => resetPass(token, href, user)
+    const emailUser = (user, token, done) => resetPass(token, user)
       .then(() => done(null, user), () => done('Could not send email to user.'));
 
     waterfall([

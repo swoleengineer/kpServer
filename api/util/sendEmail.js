@@ -22,7 +22,7 @@ const getTo = user => ({
 });
 
 module.exports = { 
-  bookAdded: (data) => sendToUser(addbook(data.book, data.user), data.user.email),
+  bookAdded: (data) => sendToUser(addBook(data.book, data.user), data.user.email),
   resetPass: () => {},
   register: (user) => sendToUser(welcome(user), user.email)
 }

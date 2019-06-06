@@ -13,6 +13,14 @@ const commentSchema = new Schema({
     type: String,
     enum: acceptableTypes
   },
+  suggested_book: {
+    type: Schema.Types.ObjectId,
+    ref: 'Book'
+  },
+  accepted: {
+    type: Boolean,
+    default: false
+  },
   created: {
     type: Date,
     default: new Date()

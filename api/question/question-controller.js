@@ -1,6 +1,6 @@
 const Question = require('./question-model');
 const Topic = require('../topic/topic-model');
-const { handleErr } = require('../util/helpers');
+const { handleErr, returnObjectsArray } = require('../util/helpers');
 const { waterfall } = require('async');
 const { pick } = require('lodash');
 
@@ -16,6 +16,12 @@ const processEnd = res => (err, data) => {
 };
 
 module.exports = {
+  getAll: (req, res) => {
+    Question.find().populate('author topics.topic').exec().then(
+      questions => res.json(returnObjectsArray(questions)),
+      err => handleErr(res, 500, '', err)
+    )
+  },
   create: (req, res) => {
     const { topics, title, text } = req.body;
     const { _id: author } = req.user;
@@ -24,8 +30,8 @@ module.exports = {
     };
     const newQuestion = new Question({
       topics: topics.map(topic => ({
-        topic,
-        agreed: [_id]
+        topic: typeof topic === 'string' ? topic : topic._id,
+        agreed: [ author ]
       })),
       author, title
     });

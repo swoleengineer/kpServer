@@ -1,34 +1,48 @@
 const Book = require('./book-model');
 const Topic = require('../topic/topic-model');
 const Author = require('../author/author-model');
-const { handleErr, returnObjectsArray } = require('../util/helpers');
+const { handleErr, returnObjectsArray, downloadImg } = require('../util/helpers');
 const sendEmail = require('../util/sendEmail');
 const { waterfall } = require('async');
 const { has } = require('lodash');
+const scrapeIt = require('scrape-it');
+const Fs = require('fs');
+const Path = require('path');
+const cloudinary = require('cloudinary');
+const base64Img = require('base64-img');
 
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API,
+  api_secret: process.env.CLOUDINARY_SECRET
+});
 
 const processEnd = res => (err, data) => {
   if (err && typeof err === 'object' && has(err, ['data', 'status', 'message'])) {
     return handleErr(res, err.status, err.message, err.data);
   }
   if (err) {
-    return handleErr(res, 500);
+    console.log('An error occured', err);
+    return handleErr(res, 500, 'An error occured', err);
   }
   res.json(data);
 };
 
 module.exports = {
   add: (req, res) => {
-    const { title, author, description, topics, isbn, amazon_link } = req.body;
+    const { title, writer, topics, isbn, amazon_link } = req.body;
+    const author = writer;
+    const { _id: person } = req.user;
     const validate = done => {
-      const errors = Object.keys({ title, author, description, topics, isbn, amazon_link }).reduce((acc, curr) => [
+      console.log('validating', { title, author, topics, isbn, amazon_link })
+      const errors = Object.keys({ title, writer, topics, isbn, amazon_link }).reduce((acc, curr) => [
         ...acc,
         ...(!req.body[curr] ? [curr] : [])
       ], []);
       if (errors.length) {
         return done({
           status: 400,
-          message: `Please check the following fields: ${errors.map(x => x.charAt(0) + x.slice(1)).join(', ')}`,
+          message: `Please check the following fields: ${errors.map(x => x.charAt(0).toUpperCase() + x.slice(1)).join(', ')}`,
           data: errors
         })
       }
@@ -53,7 +67,7 @@ module.exports = {
       })
     }
 
-    const checkBook = (writer, done) => Book.findOne({ amazon_link: amazon_link.toLowerCase() }).exec().then(
+    const checkBook = (writer, done) => Book.findOne({ $or: [{ amazon_link: amazon_link.toLowerCase()}, { isbn }] }).exec().then(
       book => {
         if (!book) {
           return done(null, writer);
@@ -70,14 +84,71 @@ module.exports = {
         data: err
       })
     )
-    const processBook = (writer, done) => {
+    const getData = (writer, done) => {
+      scrapeIt(amazon_link, {
+        pictureLink: {
+          selector: '#imageBlockContainer img',
+          attr: 'src'
+        },
+        amazonTitle: '#productTitle'
+      }).then(
+        ({ data, response, $, body }) => {
+          console.log('finished running scrapeIt', { data });
+          const { pictureLink, amazonTitle } = data;
+          const fileName = `${Date.now()}${title.trim()}`
+          const path = Path.resolve(__dirname, 'files', fileName);
+          base64Img.img(pictureLink, path, fileName, (err, filePath) => {
+            console.log('finished running base64 library', { filePath, err });
+            if (err) {
+              return done({
+                message: 'Error saving picture for this book on media server',
+                status: 501,
+                data: err
+              });
+            }
+            cloudinary.uploader.upload(filePath, (result) => {
+              if (result.error) {
+                console.log('cloudinary error', result.error)
+                return done({
+                  message: 'Error saving picture for this book on media server.',
+                  status: 501,
+                  data: result.error
+                });
+              }
+              Fs.unlink(filePath, err => {
+                if (err) {
+                  return done(null, { pictureResult: result, amazonTitle }, writer);
+                }
+              });
+              console.log('finished uploading file', result);
+              return done(null, { pictureResult: result, amazonTitle }, writer)
+            })
+          })
+        },
+        (err) => {
+          return done({
+            message: 'Link error. Please check your pasted amazon link.',
+            status: 400,
+            data: err
+          })
+        }
+      )
+    }
+    const processBook = ({ pictureResult, amazonTitle }, writer, done) => {
+      const picture = {
+        default: true,
+        link: pictureResult.secure_url,
+        plublic_id: pictureResult.public_id
+      };
+      console.log('picture details: ', picture)
       const newBook = new Book({
         title,
         author: writer,
-        description,
-        topics: topics.map(topic => ({ topic })),
+        description: amazonTitle,
+        topics: topics.map(topic => ({ topic: topic._id, agreed: [person] })),
         isbn: isbn.toLowerCase(),
-        amazon_link: amazon_link.toLowerCase()
+        amazon_link: amazon_link.toLowerCase(),
+        pictures: [picture]
       });
       newBook.save((err, book) => {
         if (err) {
@@ -87,7 +158,16 @@ module.exports = {
             data: err
           });
         }
-        return done(null, book)
+        Book.populate(book,
+          [{ path: 'author'},
+            { path: 'topics.topic'}
+          ],
+          (error, populatedBook) => {
+            if (error) {
+              return done(null, book)
+            }
+            return done(null, populatedBook)
+          })
       })
     }
 
@@ -96,7 +176,14 @@ module.exports = {
       () => done(null, book)
     )
 
-    waterfall([validate, processAuthor, checkBook, processBook, notify], processEnd(res))
+    waterfall([
+      validate,
+      processAuthor,
+      checkBook,
+      getData,
+      processBook,
+      notify],
+      processEnd(res));
   },
   getOne: (req, res) => {
     const { id } = req.params;

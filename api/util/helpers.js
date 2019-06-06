@@ -3,6 +3,8 @@ const { omit } = require('lodash');
 const sendEmail = require('./sendEmail');
 const jwt = require('jsonwebtoken');
 const moment = require('moment');
+const axios = require('axios');
+
 
 module.exports = {
   returnObjectsArray: arr => ({ amount: arr.length, data: [...arr] }),
@@ -27,6 +29,7 @@ module.exports = {
       req.admin = decoded.user.role === 'admin' || decoded.user.role === 'super' ? true : false;
       req.decoded = decoded;
       req.user = decoded.user;
+      req.sub = decoded.sub
       next();
     });
   },
@@ -40,6 +43,7 @@ module.exports = {
     }
     return jwt.sign(payload, process.env.SECRET);
   },
+  downloadImg: (url) => axios({ url, responseType: 'stream' }),
   sendEmail,
   acceptableTypes: ['Book', 'Question', 'Topic']
 }

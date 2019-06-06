@@ -19,5 +19,13 @@ module.exports = {
   resetPassword: {},
   pwResetSuccess: {},
 
-  addBook: (book, user) => {}
+  addBook: (book, user) => {
+    const { profile: { first_name: name }} = user;
+    return {
+      subject: 'You have added a book!',
+      html: `Hey ${name}! thank you for adding ${book.title} to keenpages.com!<br /><br /> People will be able to interact with it now.
+      <br /><br />
+      ${signature}${notificationSetting}`
+    }
+  }
 }
