@@ -1,10 +1,21 @@
 const Sentry = require('@sentry/node');
-const { omit } = require('lodash');
+const { omit, flatten } = require('lodash');
 const sendEmail = require('./sendEmail');
 const jwt = require('jsonwebtoken');
 const moment = require('moment');
 const axios = require('axios');
+const googleBooksUrl = 'https://www.googleapis.com/books/v1/volumes?q=';
+const Book = require('../book/book-model');
+const Author = require('../author/author-model');
+const Topic = require('../topic/topic-model');
+const { waterfall, each } = require('async');
+const cloudinary = require('cloudinary');
 
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API,
+  api_secret: process.env.CLOUDINARY_SECRET
+});
 
 module.exports = {
   returnObjectsArray: arr => ({ amount: arr.length, data: [...arr] }),
@@ -44,6 +55,190 @@ module.exports = {
     return jwt.sign(payload, process.env.SECRET);
   },
   downloadImg: (url) => axios({ url, responseType: 'stream' }),
+  searchGoogleBooks: (title) => axios.get(`${googleBooksUrl}intitle:${title.split(' ').join('+')}&key=${process.env.GOOGLE_API_KEY_BOOKS}`),
+  processGBook: (item, index = undefined) => {
+    const { volumeInfo, id, etag } = item;
+    const { title, subtitle = '', description = '', authors: writers = [], publisher = '', publishedDate, categories = [], imageLinks, industryIdentifiers = []} = volumeInfo;
+    const authors = writers.map((name, _id) => ({ name, _id }));
+    const topics = categories.map((name, _id) => ({
+      _id,
+      agreed: [],
+      topic: {
+        _id,
+        name,
+        similar: [],
+        active: false
+      }
+    }));
+    const { thumbnail = undefined , smallThumbnail = undefined } = imageLinks || {};
+    const picture = {
+      link: thumbnail || smallThumbnail || '',
+      public_id: '1804'
+    };
+    const { identifier: isbn10 = '' } = industryIdentifiers.find(x => x.type === 'ISBN_10') || {};
+    const { identifier: isbn13 = '' } = industryIdentifiers.find(x => x.type === 'ISBN_13') || {};
+    return {
+      title,
+      subtitle,
+      description,
+      gId: id,
+      gTag: etag,
+      publisher,
+      publish_date: publishedDate,
+      isbn10,
+      isbn13,
+      likes: [],
+      created: new Date(),
+      topics,
+      active: false,
+      pictures: [picture],
+      views: 0,
+      authors
+    }
+  },
+  getUnique: (arr, prop) => arr.map(e => e[prop]).map((e, i, f) => f.indexOf(e) === i && i).filter(e => arr[e]).map(e => arr[e]),
+  saveGBook: (book, user, callback) => {
+    const bookPayload = omit(book, ['created', 'likes', 'authors', 'topics', 'pictures', 'active', 'comments', 'reports', 'views']);
+    const { authors: scribes = [], topics: cats = [], pictures: pix = []} = book;
+    const authors = scribes.map(person => person.name);
+    const categories = flatten(cats.map(topic => topic.topic.name));
+    const imageLinks = {
+      thumbnail: pix.length ? pix[0].link : undefined
+    }
+    const processAuthor = done => {
+      if (!authors.length) {
+        return done(null, []);
+      }
+      Author.find({ name: { $in: authors }}).exec().then(
+        writers => {
+          if (writers.length) {
+            return done(null, writers);
+          }
+          const newAuthors = [];
+          const createNewAuthor = (name, cb) => {
+            const newAuthor = new Author({ name });
+            newAuthor.save((err, createdAuthor) => {
+              if (err) {
+                cb({
+                  status: 501,
+                  message: 'Error creating new author for this book',
+                  data: err
+                });
+                return;
+              }
+              newAuthors.push(createdAuthor);
+              cb();
+            })
+          }
+          each(authors, createNewAuthor, (err) => {
+            if (err) {
+              return done(err);
+            }
+            return done(null, newAuthors);
+          })
+        },
+        err => done({
+          status: 500,
+          message: 'Server error processing authors for this book',
+          data: err
+        })
+      )
+    };
+
+    const processTopics = (writers, done) => {
+      if (!categories.length) {
+        return done(null, [], writers);
+      }
+      Topic.find({ name: { $in: categories }}).exec().then(
+        topics => {
+          if (topics.length) {
+            return done(null, writers, topics);
+          }
+          const newTopics = [];
+          const createNewTopic = (name, cb) => {
+            const newTopic = new Topic({ name, active: true });
+            newTopic.save((err, savedTopic) => {
+              if (err) {
+                cb({
+                  status: 501,
+                  message: 'Error creating new topics for this book.',
+                  data: err
+                });
+                return;
+              }
+              newTopics.push(savedTopic);
+              cb();
+            })
+          }
+          each(categories, createNewTopic, err => {
+            if (err) {
+              return done(err);
+            }
+            done(null, newTopics, writers);
+          })
+        },
+        err => done({
+          status: 501,
+          message: 'Server error processing topics for this book.',
+          data: err
+        })
+      )
+    }
+
+    const processImages = (topics, writers, done) => {
+      const { thumbnail = undefined , smallThumbnail = undefined } = imageLinks;
+      if (!thumbnail && !smallThumbnail) {
+        return done(null, false, topics, writers);
+      }
+      cloudinary.uploader.upload(thumbnail || smallThumbnail, (result) => {
+        if (result.error) {
+          console.log('cloudinary error', result.error);
+          return done(null, false, topics, writers);
+        }
+        const image = {
+          link: result.secure_url,
+          public_id:result.public_id
+        };
+        return done(null, image, topics, writers);
+      })
+    }
+
+    const processBook = (image, topics, writers, done) => {
+      const newBook = new Book({
+        ...bookPayload,
+        authors: writers.map(writer => writer._id),
+        active: true,
+        topics: topics.map(topic => ({
+          topic: topic._id,
+          agreed: user && user._id ? [ user._id ] : []
+        }))
+      });
+      if (image) {
+        newBook.pictures = [ image ];
+      }
+      newBook.save((err, savedBook) => {
+        if (err) {
+          return done({
+            status: 501,
+            message: 'Server error saving this book',
+            data: err
+          });
+        }
+        Book.populate(savedBook,[{
+          path: 'authors'
+        }, {
+          path: 'topics.topic'
+        }], (error, populatedBook) => {
+          if (error) {
+            return done(null, savedBook);
+          }
+          return done(null, populatedBook);
+        })
+      });
+    }
+
+    waterfall([processAuthor, processTopics, processImages, processBook], callback);
+  },
   sendEmail,
-  acceptableTypes: ['Book', 'Question', 'Topic']
+  acceptableTypes: ['Book', 'Question', 'Topic', 'Comment']
 }

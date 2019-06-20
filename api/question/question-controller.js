@@ -42,7 +42,16 @@ module.exports = {
       if (err) {
         return handleErr(res, 500, 'Could not create your question.', err)
       }
-      res.json(question);
+      Question.populate(question, [{
+        path: 'author'
+      }, {
+        path: 'topics.topic'
+      }], (error, populated) => {
+        if (error) {
+          return res.json(question);
+        }
+        res.json(populated)
+      })
     })
   },
   edit: (req, res) => {
@@ -165,7 +174,7 @@ module.exports = {
 
     waterfall([validateRequest, getSimilarTopics, getMainQuestions], processEnd(res));
   },
-  getOne: (req, res) => Question.findById(req.params.id).populate('author topics.topic topics.agreed').exec().then(
+  getOne: (req, res) => Question.findById(req.params.id).populate('author topics.topic topics.agreed').lean().exec().then(
     question => {
       if (!question) {
         return handleErr(res, 404, 'Question not found.', false);

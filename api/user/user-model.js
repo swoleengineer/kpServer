@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 const bcrypt = require('bcrypt-nodejs');
 
+
 const userSchema = new Schema({
   profile: {
     first_name: String,
@@ -32,6 +33,16 @@ const userSchema = new Schema({
     type: Date,
     default: Date.now
   },
+  savedBooks: [{
+    type: Schema.Types.ObjectId,
+    ref: 'Book',
+    autopopulate: true
+  }],
+  readBooks: [{
+    type: Schema.Types.ObjectId,
+    ref: 'Book',
+    autopopulate: true
+  }],
   notification_new_book: {
     type: Boolean,
     default: true
@@ -48,11 +59,25 @@ const userSchema = new Schema({
     type: Boolean,
     default: true
   },
+  notification_book_suggested: {
+    type: Boolean,
+    default: true
+  },
+  notification_topic_added: {
+    type: Boolean,
+    default: true
+  },
+  notification_suggestion_accepted: {
+    type: Boolean,
+    default: true
+  },
   created: {
     type: Date,
     default: new Date()
   }
 });
+
+userSchema.plugin(require('mongoose-autopopulate'));
 
 userSchema.methods.toJSON = function() {
   const user = this.toObject();

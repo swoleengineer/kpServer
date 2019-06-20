@@ -1,15 +1,16 @@
 const Book = require('./book-model');
 const Topic = require('../topic/topic-model');
 const Author = require('../author/author-model');
-const { handleErr, returnObjectsArray, downloadImg } = require('../util/helpers');
+const { getUnique, handleErr, returnObjectsArray, downloadImg, searchGoogleBooks, processGBook } = require('../util/helpers');
 const sendEmail = require('../util/sendEmail');
-const { waterfall } = require('async');
-const { has } = require('lodash');
+const { waterfall, each } = require('async');
+const { has, omit, flatten } = require('lodash');
 const scrapeIt = require('scrape-it');
 const Fs = require('fs');
 const Path = require('path');
 const cloudinary = require('cloudinary');
 const base64Img = require('base64-img');
+
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -29,6 +30,160 @@ const processEnd = res => (err, data) => {
 };
 
 module.exports = {
+  createFromGoogle: (req, res) => {
+    const bookPayload = omit(req.body, ['created', 'likes', 'authors', 'topics', 'pictures', 'active', 'comments', 'reports', 'views']);
+    const { authors: scribes = [], topics: cats = [], pictures: pix = []} = req.body;
+    const authors = scribes.map(person => person.name);
+    const categories = flatten(cats.map(topic => topic.topic.name));
+    const imageLinks = {
+      thumbnail: pix.length ? pix[0].link : undefined
+    }
+    const validate = done => {
+      const { gId, gTag, title } = bookPayload
+      const requiredFields = { gId, gTag, title };
+      if (Object.keys(requiredFields).filter(key => !requiredFields[key]).length) {
+        return done({
+          status: 400,
+          message: 'Required fields are missing',
+          data: false
+        });
+      }
+      return done(null);
+    };
+
+    const processAuthor = done => {
+      if (!authors.length) {
+        return done(null, []);
+      }
+      Author.find({ name: { $in: authors }}).exec().then(
+        writers => {
+          if (writers.length) {
+            return done(null, writers);
+          }
+          const newAuthors = [];
+          const createNewAuthor = (name, cb) => {
+            const newAuthor = new Author({ name });
+            newAuthor.save((err, createdAuthor) => {
+              if (err) {
+                cb({
+                  status: 501,
+                  message: 'Error creating new author for this book',
+                  data: err
+                });
+                return;
+              }
+              newAuthors.push(createdAuthor);
+              cb();
+            })
+          }
+          each(authors, createNewAuthor, (err) => {
+            if (err) {
+              return done(err);
+            }
+            return done(null, newAuthors);
+          })
+        },
+        err => done({
+          status: 500,
+          message: 'Server error processing authors for this book',
+          data: err
+        })
+      )
+    };
+
+    const processTopics = (writers, done) => {
+      if (!categories.length) {
+        return done(null, [], writers);
+      }
+      Topic.find({ name: { $in: categories }}).exec().then(
+        topics => {
+          if (topics.length) {
+            return done(null, writers, topics);
+          }
+          const newTopics = [];
+          const createNewTopic = (name, cb) => {
+            const newTopic = new Topic({ name, active: true });
+            newTopic.save((err, savedTopic) => {
+              if (err) {
+                cb({
+                  status: 501,
+                  message: 'Error creating new topics for this book.',
+                  data: err
+                });
+                return;
+              }
+              newTopics.push(savedTopic);
+              cb();
+            })
+          }
+          each(categories, createNewTopic, err => {
+            if (err) {
+              return done(err);
+            }
+            done(null, newTopics, writers);
+          })
+        },
+        err => done({
+          status: 501,
+          message: 'Server error processing topics for this book.',
+          data: err
+        })
+      )
+    }
+
+    const processImages = (topics, writers, done) => {
+      const { thumbnail = undefined , smallThumbnail = undefined } = imageLinks;
+      if (!thumbnail && !smallThumbnail) {
+        return done(null, false, topics, writers);
+      }
+      cloudinary.uploader.upload(thumbnail || smallThumbnail, (result) => {
+        if (result.error) {
+          console.log('cloudinary error', result.error);
+          return done(null, false, topics, writers);
+        }
+        const image = {
+          link: result.secure_url,
+          public_id:result.public_id
+        };
+        return done(null, image, topics, writers);
+      })
+    }
+    const processBook = (image, topics, writers, done) => {
+      const newBook = new Book({
+        ...bookPayload,
+        authors: writers.map(writer => writer._id),
+        active: true,
+        topics: topics.map(topic => ({
+          topic: topic._id,
+          agreed: []
+        })),
+      });
+      if (image) {
+        newBook.pictures = [ image ];
+      }
+      newBook.save((err, savedBook) => {
+        if (err) {
+          return done({
+            status: 501,
+            message: 'Server error saving this book',
+            data: err
+          });
+        }
+        Book.populate(savedBook,[{
+          path: 'authors'
+        }, {
+          path: 'topics.topic'
+        }], (error, populatedBook) => {
+          if (error) {
+            return done(null, savedBook);
+          }
+          return done(null, populatedBook);
+        })
+      });
+    }
+
+    waterfall([validate, processAuthor, processTopics, processImages, processBook], processEnd);
+  },
   add: (req, res) => {
     const { title, writer, topics, isbn, amazon_link } = req.body;
     const author = writer;
@@ -90,14 +245,46 @@ module.exports = {
           selector: '#imageBlockContainer img',
           attr: 'src'
         },
-        amazonTitle: '#productTitle'
+        ebookPictureLink: {
+          selector: '#ebooks-img-canvas img',
+          attr: 'src'
+        },
+        backupImg1: {
+          selector: '#mainImageContainer img',
+          attr: 'src'
+        },
+        amazonTitle: '#productTitle',
+        amazonBackupTitle: '#ebooksProductTitle',
+        ebookTitle: '#ebooksProductTitle',
+        topics: {
+          listItem: '.zg_hrsr_item',
+          data: {
+            topic: '.zg_hrsr_ladder a'
+          }
+        }
       }).then(
         ({ data, response, $, body }) => {
           console.log('finished running scrapeIt', { data });
-          const { pictureLink, amazonTitle } = data;
+          const { pictureLink, amazonTitle, ebookPictureLink, ebookTitle, backupImg1 } = data;
+          if ((!pictureLink && !ebookPictureLink) || (!amazonTitle && !ebookTitle)) {
+            return done({
+              message: 'Please check the amazon link you pasted.',
+              status: 400,
+              err: amazon_link
+            })
+          }
           const fileName = `${Date.now()}${title.trim()}`
           const path = Path.resolve(__dirname, 'files', fileName);
-          base64Img.img(pictureLink, path, fileName, (err, filePath) => {
+          const picLink = pictureLink || ebookPictureLink;
+          const description = amazonTitle || ebookTitle;
+          if (!pictureLink && ebookPictureLink) {
+            return done(null, {
+              remove: false,
+              path, filePath: picLink, fileName,
+              amazonTitle: description,
+            }, writer)
+          }
+          base64Img.img(picLink, path, fileName, (err, filePath) => {
             console.log('finished running base64 library', { filePath, err });
             if (err) {
               return done({
@@ -106,23 +293,10 @@ module.exports = {
                 data: err
               });
             }
-            cloudinary.uploader.upload(filePath, (result) => {
-              if (result.error) {
-                console.log('cloudinary error', result.error)
-                return done({
-                  message: 'Error saving picture for this book on media server.',
-                  status: 501,
-                  data: result.error
-                });
-              }
-              Fs.unlink(filePath, err => {
-                if (err) {
-                  return done(null, { pictureResult: result, amazonTitle }, writer);
-                }
-              });
-              console.log('finished uploading file', result);
-              return done(null, { pictureResult: result, amazonTitle }, writer)
-            })
+            return done(null, {
+              remove: true,
+              filePath, path, fileName, amazonTitle: description
+            }, writer);
           })
         },
         (err) => {
@@ -134,6 +308,28 @@ module.exports = {
         }
       )
     }
+    const uploadToCloudinary = ({ filePath, remove, amazonTitle }, writer, done) => {
+      cloudinary.uploader.upload(filePath, (result) => {
+        if (result.error) {
+          console.log('cloudinary error', result.error)
+          return done({
+            message: 'Error saving picture for this book on media server.',
+            status: 501,
+            data: result.error
+          });
+        }
+        if (remove) {
+          Fs.unlink(filePath, err => {
+            if (err) {
+              return done(null, { pictureResult: result, amazonTitle }, writer);
+            }
+          });
+        }
+        console.log('finished uploading file', result);
+        return done(null, { pictureResult: result, amazonTitle }, writer)
+      })
+    };
+
     const processBook = ({ pictureResult, amazonTitle }, writer, done) => {
       const picture = {
         default: true,
@@ -148,8 +344,11 @@ module.exports = {
         topics: topics.map(topic => ({ topic: topic._id, agreed: [person] })),
         isbn: isbn.toLowerCase(),
         amazon_link: amazon_link.toLowerCase(),
-        pictures: [picture]
+        pictures: [picture],
+        createdBy: req.user._id,
+        
       });
+
       newBook.save((err, book) => {
         if (err) {
           return done({
@@ -181,6 +380,7 @@ module.exports = {
       processAuthor,
       checkBook,
       getData,
+      uploadToCloudinary,
       processBook,
       notify],
       processEnd(res));
@@ -211,6 +411,58 @@ module.exports = {
       books => res.json(returnObjectsArray(books)),
       err => handleErr(res, 500, 'Server error retrieving books for this author.', err)
     )
+  },
+  query: (req, res) => {
+    const { sort = '', topics = undefined, already = []} = req.body;
+    if (!sort && (!topics || !topics.length)) {
+      return handleErr(res, 400, 'No sort or topics included, try the getAll endpoint instead.', { sort, topics, already });
+    }
+
+    const query = Book.aggregate()
+      .match({
+        'topics': { topic: { $in: topics }},
+        '_id': { $nin: already }
+      })
+      .project({
+        'title': 1,
+        'author': 1,
+        'views': 1,
+        'pictures': 1,
+        'affiliate_link': 1,
+        'amazon_link': 1,
+        'description': 1,
+        'topics': 1,
+        'topicsLength': { '$size': { '$ifNull': ['$topics', []]} },
+        'isbn': 1,
+        'likes': 1,
+        'likesLength': { '$size': { '$ifNull': ['$likes', []]} },
+        'created': 1,
+        'createdBy': 1
+      })
+      .unwind('$topics')
+      .lookup({
+        from: 'Author',
+        localField: 'author',
+        foreignField: '_id',
+        as: 'author1'
+      })
+      .lookup({
+        from: 'Topic',
+        localField: 'topics.topic',
+        foreignField: '_id',
+        as: 'topicDocs'
+      })
+      .group({
+        '_id': '$_id',
+        'topics': { '$push': '$topics' }
+      })
+      .sort(sort)
+      .limit(50)
+      
+      query.exec().then(
+        books => res.json(returnObjectsArray(books)),
+        err => handleErr(res, 500, 'Error retrieving your books', err)
+      )
   },
   getByTopic: (req, res) => {
     // search books by topic
@@ -274,7 +526,7 @@ module.exports = {
     waterfall([validateRequest, getSimilarTopics, getMainBooks], processEnd(res));
   },
   getAll: (req, res) => {
-    Book.find().exec().then(
+    Book.find().populate('author topics.topic').limit(50).exec().then(
       books => res.json(returnObjectsArray(books)),
       err => handleErr(res, 501, 'Server error retrieving your books', err)
     )
@@ -307,21 +559,58 @@ module.exports = {
     });
   },
   search: (req, res) => {
-    const { text } = req.query;
-    if (!text) {
+    const { text: word } = req.query;
+    if (!word) {
       return handleErr(res, 400, 'You must type something in to perform a search.', false);
     }
+    const text = decodeURI(word);
     const hit = new RegExp("^" + text, "i")
-    const query = {
-      $or: [
-        { title: hit },
-        { description: hit }
-      ]
-    };
-    Book.find(query).populate('author likes topics.agreed ').exec().then(
-      books => res.json(returnObjectsArray(books)),
-      err => handleErr(res, 501, 'Server error searching for your books', err)
+    const keenQuery = Book.find({ $or: [{ title: hit }, { description: hit }] }).populate('author topics.agreed ');
+    
+    const searchGoogle = done => searchGoogleBooks(text).then(
+      response => {
+        const { data: { items } = { items: []} } = response;
+        if (!items.length) {
+          return done(null, []);
+        }
+        const processedBooks = items.map(processGBook);
+        return done(null, processedBooks);
+      },
+      err => done({
+        status: 501,
+        message: 'Server error searching your books',
+        data: err
+      })
     )
+
+    const searchKeen = (gBooks, done) => {
+      keenQuery.lean().exec().then(
+        books => {
+          if (!books.length) {
+            return done(null, gBooks);
+          }
+          const ids = books.map(book => book.gId);
+          const allBooks = [ ...books, ...gBooks.filter(book => !ids.includes(book.gId))];
+          return done(null, allBooks);
+        },
+        err => gBooks.length ? done(null, gBooks) : done({
+          status: 500,
+          message: 'Server error fetching your books.',
+          data: err
+        })
+      )
+    }
+    
+    waterfall([searchGoogle, searchKeen], (err, books) => {
+      if (err && typeof err === 'object' && has(err, ['data', 'status', 'message'])) {
+        return handleErr(res, err.status, err.message, err.data);
+      }
+      if (err) {
+        console.log('An error occured', err);
+        return handleErr(res, 500, 'An error occured', err);
+      }
+      return res.json(returnObjectsArray(books));
+    })
   },
   toggleLike: (req, res) => {
     const { user: { _id: user }, params: { id: book }} = req;
@@ -372,18 +661,36 @@ module.exports = {
       });
   },
   addTopic: (req, res) => {
-    Book.findByIdAndUpdate(req.params.id,
-      { $push: { 'topics': {
-        topic: req.params.topicId,
-        agreed: req.user._id
-      }}},
-      { new: true, upsert: true, safe: true },
-      (err, response) => {
-        if (err) {
-          return handleErr(res, 500)
+    Book.findById(req.params.id).populate('topics.topic author').exec().then(
+      book => {
+        if (!book) {
+          Promise.reject('Could not get book');
         }
-        res.json(response);
-      })
+        const bookTopicIds = book.topics.map(topic => topic.topic);
+        const finalTopicsToAdd = req.body.topics
+          .map(topic => topic._id)
+          .filter(topic => !bookTopicIds.includes(topic))
+          .map(topic => ({ topic, agreed: [req.user._id] }));
+        if (!finalTopicsToAdd.length) {
+          res.json(book);
+          return;
+        }
+        book.topics.push(...finalTopicsToAdd);
+        book.save((err, updatedBook) => {
+          if (err) {
+            return handleErr(res, 501, 'Could not update this book to add your topics.', err);
+          }
+          Book.populate(updatedBook, [{ path: 'topics.topic'}, { path: 'author'}], (error, populated) => {
+            if (error) {
+              res.json(updatedBook);
+              return;
+            }
+            res.json(populated);
+          })
+        })
+      },
+      err => handleErr(res, 500, 'Server error trying to add topics', err)
+    )
   },
   rmTopic: (req, res) => {
     Book.findByIdAndUpdate(req.params.id,
@@ -398,25 +705,34 @@ module.exports = {
   },
   toggleAgree: (req, res) => {
     const { user: { _id }, params: { id, topicId }} = req;
+    console.log(`toggling user: ${_id} from topic: ${topicId}`)
     Book.findById(id).exec().then(
       book => {
         if (!book) {
           return handleErr(res, 404, 'Could not find the book.', false);
         }
-        const { topics } = book;
-        book.topics = topics.map(topic => ({
-          ...topic,
-          agreed: topic._id !== topicId
-            ? topic.agreed
-            : topic.agreed.includes(_id)
-              ? topic.agreed.filter(user => user !== _id)
-              : topic.agreed.concat(_id)
-        }));
+        for (let i = 0; i < book.topics.length; i++) {
+          if (book.topics[i]._id == topicId) {
+            console.log('Found the topic')
+            if (book.topics[i].agreed.includes(_id)) {
+              book.topics[i].agreed.splice(book.topics[i].agreed.indexOf(_id, 1));
+            } else {
+              book.topics[i].agreed.push(_id)
+            }
+
+          }
+        }
         book.save((error, response) => {
           if (error) {
             return handleErr(res, 'Could not update the topic in this book.', error);
           }
-          res.json(response);
+          Book.populate(response, [{ path: 'topics.topic'}, { path: 'author'}], (error, populated) => {
+            if (error) {
+              res.json(response);
+              return;
+            }
+            res.json(populated);
+          });
         })
       },
       err => handleErr(res, 500)

@@ -6,7 +6,7 @@ const reportTypes = ['inappropriate', 'spam'];
 module.exports = {
   create: (req, res) => {
     const { author, parentId, parentType, reportType } = req.body;
-    if (!author || parentId || !parentType || !acceptableTypes.includes(parentType) || !reportType || !reportTypes.includes(reportType)) {
+    if (!author || !parentId || !parentType || !acceptableTypes.includes(parentType) || !reportType || !reportTypes.includes(reportType)) {
       return handleErr(res, 400, 'Report could not be accepted. Please try again.', {
         reportType, parentType
       });

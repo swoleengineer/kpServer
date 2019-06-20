@@ -3,7 +3,10 @@ const logger = require('morgan');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const Sentry = require('@sentry/node');
-Sentry.init({ dsn: process.env.SENTRY_DSN });
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  debug: process.env.ENVIRONMENT === 'dev'
+});
 
 
 

@@ -13,7 +13,8 @@ const pictureSchema = new Schema({
 const topicSchema = new Schema({
   topic: {
     type: Schema.Types.ObjectId,
-    ref: 'Topic'
+    ref: 'Topic',
+    autopopulate: true
   },
   agreed: [{
     type: Schema.Types.ObjectId,
@@ -24,15 +25,30 @@ const topicSchema = new Schema({
     default: new Date()
   }
 })
+
+topicSchema.plugin(require('mongoose-autopopulate'));
+
 const bookSchema = new Schema({
+  gId: String,
+  gTag: String,
   title: {
     type: String,
     required: true
   },
+  subtitle: {
+    type: String
+  },
+  publisher: String,
   author: {
     type: Schema.Types.ObjectId,
-    ref: 'Author'
+    ref: 'Author',
+    autopopulate: true
   },
+  authors: [{
+    type: Schema.Types.ObjectId,
+    ref: 'Author',
+    autopopulate: true
+  }],
   views: {
     type: Number,
     default: 0
@@ -46,22 +62,28 @@ const bookSchema = new Schema({
   },
   description: String,
   topics: [topicSchema],
-  publish_date: {
-    type: Date
+  publish_date: String,
+  isbn10: {
+    type: String
   },
-  isbn: {
-    type: String,
-    unique: true
+  isbn13: {
+    type: String
   },
   likes: [{
     type: Schema.Types.ObjectId,
-    ref: 'User'
+    ref: 'User',
   }],
   created: {
     type: Date,
     default: new Date()
+  },
+  createdBy: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+    autopopulate: true
   }
 });
 
+bookSchema.plugin(require('mongoose-autopopulate'));
 
 module.exports = mongoose.model('Book', bookSchema);

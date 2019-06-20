@@ -12,6 +12,8 @@ router.get('/search', controller.search);
 router.put('/toggleLike/:id', isLoggedIn, controller.toggleLike);
 router.post('/addPic/:id', isLoggedIn, controller.addPic);
 router.delete('/rmPic/:id/:pictureId', isLoggedIn, controller.rmPic);
-router.put('toggleAgree/:id/:topicId', isLoggedIn, controller.toggleAgree);
-
+router.put('/toggleAgree/:id/:topicId', isLoggedIn, controller.toggleAgree);
+router.post('/addTopics/:id', isLoggedIn, controller.addTopic);
+router.post('/queryTopicSort', controller.query);
+router.post('/createFromInternet', controller.createFromGoogle);
 module.exports = router;

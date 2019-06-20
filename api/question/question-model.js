@@ -4,7 +4,8 @@ const Schema = mongoose.Schema;
 const topicSchema = new Schema({
   topic: {
     type: Schema.Types.ObjectId,
-    ref: 'Topic'
+    ref: 'Topic',
+    autopopulate: true
   },
   agreed: [{
     type: Schema.Types.ObjectId,
@@ -16,11 +17,14 @@ const topicSchema = new Schema({
   }
 });
 
+topicSchema.plugin(require('mongoose-autopopulate'));
+
 const questionSchema = new Schema({
   text: String,
   author: {
     type: Schema.Types.ObjectId,
-    ref: 'User'
+    ref: 'User',
+    autopopulate: true
   },
   title: String,
   topics: [topicSchema],
@@ -29,5 +33,7 @@ const questionSchema = new Schema({
     default: new Date()
   }
 });
+
+questionSchema.plugin(require('mongoose-autopopulate'));
 
 module.exports = mongoose.model('Question', questionSchema);
