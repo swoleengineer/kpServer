@@ -20,21 +20,24 @@ cloudinary.config({
 
 const processEnd = res => (err, data) => {
   if (err && typeof err === 'object' && has(err, ['data', 'status', 'message'])) {
+    console.log('One error occured', err)
     return handleErr(res, err.status, err.message, err.data);
   }
   if (err) {
     console.log('An error occured', err);
     return handleErr(res, 500, 'An error occured', err);
   }
+  console.log('sending data to client', data);
   res.json(data);
 };
 
 module.exports = {
   createFromGoogle: (req, res) => {
-    const bookPayload = omit(req.body, ['created', 'likes', 'authors', 'topics', 'pictures', 'active', 'comments', 'reports', 'views']);
+    const bookPayload = omit(req.body, ['created', 'likes', 'authors', 'topics', 'pictures', 'active', 'comments', 'reports', 'views', '_id']);
     const { authors: scribes = [], topics: cats = [], pictures: pix = []} = req.body;
     const authors = scribes.map(person => person.name);
     const categories = flatten(cats.map(topic => topic.topic.name));
+    console.log('the topics to add ', categories)
     const imageLinks = {
       thumbnail: pix.length ? pix[0].link : undefined
     }
@@ -48,10 +51,21 @@ module.exports = {
           data: false
         });
       }
-      return done(null);
+      console.log('Finished validating body');
+      Book.findOne({ gId }).exec().then(
+        book => {
+          if (book) {
+            res.json(book);
+            done(null,book);
+          }
+          done(null);
+        },
+        err => done(null)
+      )
     };
 
     const processAuthor = done => {
+      console.log('Processing authors', authors)
       if (!authors.length) {
         return done(null, []);
       }
@@ -62,6 +76,7 @@ module.exports = {
           }
           const newAuthors = [];
           const createNewAuthor = (name, cb) => {
+            console.log('creating new author: ' + name);
             const newAuthor = new Author({ name });
             newAuthor.save((err, createdAuthor) => {
               if (err) {
@@ -78,8 +93,10 @@ module.exports = {
           }
           each(authors, createNewAuthor, (err) => {
             if (err) {
+              console.log('could not process authors', err)
               return done(err);
             }
+            console.log('Successfully processed authors')
             return done(null, newAuthors);
           })
         },
@@ -92,18 +109,24 @@ module.exports = {
     };
 
     const processTopics = (writers, done) => {
+      console.log('Processing topics', categories);
       if (!categories.length) {
+        console.log('there are no topics to add')
         return done(null, [], writers);
       }
       Topic.find({ name: { $in: categories }}).exec().then(
         topics => {
+          console.log('finished searching for topics.')
           if (topics.length) {
-            return done(null, writers, topics);
+            console.log(`there are ${topics.length} that match, here is the first.`, topics[0])
+            return done(null, topics, writers);
           }
           const newTopics = [];
           const createNewTopic = (name, cb) => {
+            console.log('Creating new topic: ' + name);
             const newTopic = new Topic({ name, active: true });
             newTopic.save((err, savedTopic) => {
+
               if (err) {
                 cb({
                   status: 501,
@@ -120,6 +143,7 @@ module.exports = {
             if (err) {
               return done(err);
             }
+            console.log('successfully processed topics', newTopics)
             done(null, newTopics, writers);
           })
         },
@@ -132,10 +156,13 @@ module.exports = {
     }
 
     const processImages = (topics, writers, done) => {
+      console.log('saving images')
       const { thumbnail = undefined , smallThumbnail = undefined } = imageLinks;
       if (!thumbnail && !smallThumbnail) {
+        console.log('NO images to save.')
         return done(null, false, topics, writers);
       }
+      console.log('got images to save.', thumbnail || smallThumbnail);
       cloudinary.uploader.upload(thumbnail || smallThumbnail, (result) => {
         if (result.error) {
           console.log('cloudinary error', result.error);
@@ -145,10 +172,12 @@ module.exports = {
           link: result.secure_url,
           public_id:result.public_id
         };
+        console.log('Successfully processed images', image);
         return done(null, image, topics, writers);
       })
     }
     const processBook = (image, topics, writers, done) => {
+      console.log('processing book. here are topics', topics[0])
       const newBook = new Book({
         ...bookPayload,
         authors: writers.map(writer => writer._id),
@@ -163,26 +192,30 @@ module.exports = {
       }
       newBook.save((err, savedBook) => {
         if (err) {
+          console.log('could not save book.', err);
           return done({
             status: 501,
             message: 'Server error saving this book',
             data: err
           });
         }
+        console.log('successfully saved book')
         Book.populate(savedBook,[{
           path: 'authors'
         }, {
           path: 'topics.topic'
         }], (error, populatedBook) => {
           if (error) {
+            console.log('could not populate book')
             return done(null, savedBook);
           }
+          console.log('populated book')
           return done(null, populatedBook);
         })
       });
     }
 
-    waterfall([validate, processAuthor, processTopics, processImages, processBook], processEnd);
+    waterfall([validate, processAuthor, processTopics, processImages, processBook], processEnd(res));
   },
   add: (req, res) => {
     const { title, writer, topics, isbn, amazon_link } = req.body;
@@ -421,7 +454,7 @@ module.exports = {
     const query = Book.aggregate()
       .match({
         'topics': { topic: { $in: topics }},
-        '_id': { $nin: already }
+        'gId': { $nin: already }
       })
       .project({
         'title': 1,
@@ -661,16 +694,77 @@ module.exports = {
       });
   },
   addTopic: (req, res) => {
-    Book.findById(req.params.id).populate('topics.topic author').exec().then(
+    const getTopics = done => Topic.find({ name: { $in: req.body.topics.map(topic => topic.name )}}).lean().exec().then(
+      topics => {
+        console.log('fetched topics to see if exists', topics)
+        if (!topics || !topics.length) {
+          return done(null, {
+            existing: [],
+            new: req.body.topics
+          })
+        }
+        return done(null, req.body.topics.reduce((acc, curr, i, arr) => {
+          const section = topics.map(top => top.name).includes(curr.name)
+            ? 'existing'
+            : 'new'
+          return {
+            ...acc,
+            [section]: [ ...acc[section],
+              section === 'existing'
+                ? topics.find(top => top.name === curr.name)
+                : curr]
+          }
+        }, {
+          existing: [],
+          new: []
+        }));
+      },
+      err => done({ status: 501, message: 'could not add topics' })
+    )
+    const createNews = (organizedTopics, done) => {
+      console.log('will be creating new ones', organizedTopics)
+      if (!organizedTopics.new.length) {
+        console.log('no new to create')
+        return done(null, organizedTopics.existing);
+      }
+      const createTopic = ({ name, description }, cb) => {
+        const newTopx = new Topic({ name, description });
+        console.log('creating new topic', { name, description })
+        newTopx.save((error, newOne) => {
+          if (error) {
+            console.log('Error creating', error)
+            cb({ status: 501, message: 'Could not create this topic', data: error})
+          }
+          console.log('succeeded')
+          organizedTopics.existing.push(newOne);
+          cb();
+        });
+      }
+      each(organizedTopics.new, createTopic, (err) => {
+        console.log('finished creating', err)
+        if (err) {
+          return done({
+            status: 501,
+            message: 'Could not create and add topics.',
+            data: err
+          });
+        }
+        return done(null, organizedTopics.existing);
+      })
+    }
+
+    const addToBook = (tops, done) => Book.findById(req.params.id).exec().then(
       book => {
         if (!book) {
           Promise.reject('Could not get book');
         }
+        console.log('adding the topic to the book, got the book')
         const bookTopicIds = book.topics.map(topic => topic.topic);
-        const finalTopicsToAdd = req.body.topics
+        const finalTopicsToAdd = tops
           .map(topic => topic._id)
           .filter(topic => !bookTopicIds.includes(topic))
           .map(topic => ({ topic, agreed: [req.user._id] }));
+        console.log('Finished filtering out which to add and which not to.')
         if (!finalTopicsToAdd.length) {
           res.json(book);
           return;
@@ -678,19 +772,25 @@ module.exports = {
         book.topics.push(...finalTopicsToAdd);
         book.save((err, updatedBook) => {
           if (err) {
-            return handleErr(res, 501, 'Could not update this book to add your topics.', err);
+            return done({
+              status: 501,
+              message: 'Could not update this book to add your topics.',
+              data: err
+            })
           }
           Book.populate(updatedBook, [{ path: 'topics.topic'}, { path: 'author'}], (error, populated) => {
             if (error) {
-              res.json(updatedBook);
-              return;
+              return done(null,updatedBook)
             }
-            res.json(populated);
+            console.log('Everything worked fine')
+            return done(null, populated)
           })
         })
       },
-      err => handleErr(res, 500, 'Server error trying to add topics', err)
-    )
+      err => done({ status: 500, message: 'Server error adding topics to book', data: err})
+    );
+
+    waterfall([getTopics, createNews, addToBook], processEnd(res))
   },
   rmTopic: (req, res) => {
     Book.findByIdAndUpdate(req.params.id,

@@ -66,14 +66,15 @@ module.exports = {
       });
     }
     const newComment = new Comment({ author, text, parentId, parentType, created: created instanceof Date ? created : new Date() });
-    if (suggested_book) {
-      console.log('received a book. adding to new comment')
+
+    if (suggested_book && !suggested_book.active) {
+      console.log('received a question. adding to new comment')
       saveGBook(suggested_book, req.user, (err, savedBook) => {
         if (err) {
-          return handleErr(res, 500, 'Could not add this book with your comment', err);
+          return handleErr(res, 500, 'Could not add this question with your comment', err);
         }
         newComment.suggested_book = savedBook._id;
-        console.log('created new book', savedBook._id, newComment);
+        console.log('created new question', savedBook._id, newComment);
         newComment.save((err, comment) => {
           if (err) {
             return handleErr(res, 500, 'Could not create your comment.', err);
@@ -90,6 +91,9 @@ module.exports = {
         })
       });
     } else {
+      if (suggested_book && suggested_book._id) {
+        newComment.suggested_book = suggested_book._id
+      }
       newComment.save((err, comment) => {
         if (err) {
           return handleErr(res, 500, 'Could not create your comment.', err);
@@ -181,5 +185,6 @@ module.exports = {
       })
     },
     err => handleErr(res, 500, 'Could not load comment to update', err)
-  )
+  ),
+  
 }
