@@ -63,7 +63,10 @@ module.exports = {
                     ? topix.find(top => top.name === curr.name)
                     : curr]
               }
-          }, {}))
+          }, {
+            existing: [],
+            new: []
+          }))
         },
         err => done({
           data: err,
