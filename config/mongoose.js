@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 module.exports = config => {
-  mongoose.connect(config.db, { useNewUrlParser: true });
+  mongoose.connect(config.db);
   mongoose.Promise = global.Promise;
 
   const db = mongoose.connection;
