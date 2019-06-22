@@ -42,31 +42,101 @@ module.exports = {
     if (!topics || !topics.length || !title) {
       return handleErr(res, 400, 'Please edit your request. Missing required parameters.');
     };
-    const newQuestion = new Question({
-      topics: topics.map(topic => ({
-        topic: typeof topic === 'string' ? topic : topic._id,
-        agreed: [ author ]
-      })),
-      author, title
-    });
-    if (text) {
-      newQuestion.text = text;
+
+    const processTopics = done => {
+      Topic.find({ name: { $in: topics.map(topic => topic.name) }}).exec().then(
+        topix => {
+          if (!topix.length) {
+            return done(null, {
+              existing: [],
+              new: topics
+            })
+          }
+          return done(null, topics.reduce((acc, curr) => {
+            const section = topix.map(top => top.name).includes(curr.name)
+              ? 'existing'
+              : 'new'
+              return {
+                ...acc,
+                [section]: [...acc[section],
+                  section === 'existing'
+                    ? topix.find(top => top.name === curr.name)
+                    : curr]
+              }
+          }, {}))
+        },
+        err => done({
+          data: err,
+          message: 'Could not create this suggestion request',
+          status: 501
+        })
+      )
     }
-    newQuestion.save((err, question) => {
-      if (err) {
-        return handleErr(res, 500, 'Could not create your question.', err)
+    const createNews = (organizedTopics, done) => {
+      console.log('will be creating new ones', organizedTopics)
+      if (!organizedTopics.new.length) {
+        console.log('no new to create')
+        return done(null, organizedTopics.existing);
       }
-      Question.populate(question, [{
-        path: 'author'
-      }, {
-        path: 'topics.topic'
-      }], (error, populated) => {
-        if (error) {
-          return res.json(question);
+      const createTopic = ({ name, description }, cb) => {
+        const newTopx = new Topic({ name, description });
+        console.log('creating new topic', { name, description })
+        newTopx.save((error, newOne) => {
+          if (error) {
+            console.log('Error creating', error)
+            cb({ status: 501, message: 'Could not create this topic', data: error})
+          }
+          console.log('succeeded')
+          organizedTopics.existing.push(newOne);
+          cb();
+        });
+      }
+      each(organizedTopics.new, createTopic, (err) => {
+        console.log('finished creating', err)
+        if (err) {
+          return done({
+            status: 501,
+            message: 'Could not create and add topics.',
+            data: err
+          });
         }
-        res.json(populated)
+        return done(null, organizedTopics.existing);
       })
-    })
+    }
+
+    const finalQuestion = (finalTopics, done) => {
+      const newQuestion = new Question({
+        topics: finalTopics.map(topic => ({
+          topic: topic._id,
+          agreed: [ author ]
+        })),
+        author, title
+      });
+      if (text) {
+        newQuestion.text = text;
+      }
+      newQuestion.save((err, question) => {
+        if (err) {
+          return done({
+            status: 500,
+            message: 'Could not create Request',
+            data: err
+          })
+        }
+        Question.populate(question, [{
+          path: 'author'
+        }, {
+          path: 'topics.topic'
+        }], (error, populated) => {
+          if (error) {
+            return done(null, question);
+          }
+          done(null, populated)
+        })
+      })
+    }
+    
+    waterfall([processTopics, createNews, finalQuestion], processEnd(res))
   },
   edit: (req, res) => {
     const { id } = req.params;
