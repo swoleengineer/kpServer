@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const controller = require('./user-controller');
-const { isLoggedIn } = require('../util/helpers');
+const { isLoggedIn, isAdmin } = require('../util/helpers');
 
 router.get('/userDetails/:id', isLoggedIn, controller.getUserDetails);
 router.post('/register', controller.register);
@@ -11,7 +11,7 @@ router.post('/forgotPass', controller.forgotPass);
 router.post('/resetPassword', controller.resetPassword);
 router.post('/changePass/:id', controller.changePass);
 router.post('/updatePic/:id', isLoggedIn, controller.changePicture);
-router.post('/update/:id', isLoggedIn, controller.update);
+router.post('/update/:id', isLoggedIn, isAdmin, controller.update);
 router.post('/notifications/:id', isLoggedIn, controller.updateNotifications);
 router.post('/engage/saveBook/:list/:id', isLoggedIn, controller.saveBook);
 router.post('/engage/rmBook/:list/:id', isLoggedIn, controller.removeBook);

@@ -11,6 +11,7 @@ const sendToUser = (type, emailRecipient, subject, body) => {
       from,
       subject: msSubject,
       html: msHtml,
+      templateId: 'e2ce25c8-8ed9-409c-9551-0fbcc8efef0c'
     };
     sgMail.send(msg, (err, result) => err ? reject(err) : resolve(result));
   });

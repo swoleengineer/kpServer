@@ -43,6 +43,16 @@ const userSchema = new Schema({
     ref: 'Book',
     autopopulate: true
   }],
+  listPublicStatus: {
+    readBooks: {
+      type: Boolean,
+      default: false
+    },
+    savedBooks: {
+      type: Boolean,
+      default: false
+    }
+  },
   notification_new_book: {
     type: Boolean,
     default: true
@@ -74,7 +84,16 @@ const userSchema = new Schema({
   created: {
     type: Date,
     default: new Date()
-  }
+  },
+  myShelves: [{
+    type: Schema.Types.ObjectId,
+    ref: 'Shelf',
+    autopopulate: true
+  }],
+  followedShelves: [{
+    type: Schema.Types.ObjectId,
+    ref: 'Shelf'
+  }]
 });
 
 userSchema.plugin(require('mongoose-autopopulate'));

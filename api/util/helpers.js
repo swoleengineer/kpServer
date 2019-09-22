@@ -30,6 +30,7 @@ module.exports = {
       });
     return res.status(status).send({ message, data });
   },
+  logError: (payload) => Sentry.captureException(payload),
   undefinedRoute: (req, res) => res.status(404).send({ message: 'You have reached an undefined route. The KeenPages server does not have this endpoint configured.' }),
   isLoggedIn: (req, res, next) => {
     const message = 'You must be authorized to access this resource.';
@@ -44,6 +45,19 @@ module.exports = {
       next();
     });
   },
+  checkAuth: (req, res, next) => {
+    const token = req.body.token || req.query.token || req.headers['x-access-token'];
+    if (!token) return next();
+    jwt.verify(token, process.env.SECRET, (err, decoded) => {
+      if (err) return next();
+      req.admin = decoded.user.role === 'admin' || decoded.user.role === 'super' ? true : false;
+      req.decoded = decoded;
+      req.user = decoded.user;
+      req.sub = decoded.sub
+      next();
+    });
+  },
+  isAdmin: (req, res, next) => req.admin ? next() : res.status(403).send({ message: 'You are not authorized to access this resource.' }),
   getToken: (user) => {
     const payload = {
       iss: 'keenpages.com',
@@ -240,5 +254,5 @@ module.exports = {
     waterfall([processAuthor, processTopics, processImages, processBook], callback);
   },
   sendEmail,
-  acceptableTypes: ['Book', 'Question', 'Topic', 'Comment']
+  acceptableTypes: ['Book', 'Question', 'Topic', 'Comment', 'Shelf', 'Thread']
 }

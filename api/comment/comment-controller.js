@@ -1,7 +1,22 @@
 const Comment = require('./comment-model');
+const Thread = require('../thread/thread.model');
 const { handleErr, returnObjectsArray, acceptableTypes, saveGBook } = require('../util/helpers');
 const { pick, omit } = require('lodash');
+const { waterfall, each } = require('async');
 
+
+const processEnd = res => (err, data) => {
+  if (err && typeof err === 'object' && has(err, ['data', 'status', 'message'])) {
+    console.log('One error occured', err)
+    return handleErr(res, err.status, err.message, err.data);
+  }
+  if (err) {
+    console.log('An error occured', err);
+    return handleErr(res, 500, 'An error occured', err);
+  }
+  console.log('sending data to client', data);
+  res.json(data);
+};
 
 module.exports = {
   getMany: (req, res) => {
@@ -9,18 +24,83 @@ module.exports = {
     if (!parentType || !acceptableTypes.includes(parentType) || !parentId) {
       return handleErr(res, 400, 'Please try your request again. Missing important params', { parentType, parentId });
     }
-    Comment.find({ parentType, parentId }).populate('author suggested_book').lean().exec().then(
-      comments => {
-        if (!comments || !comments.length) {
-          return handleErr(res, 404, 'No comments found.');
-        }
-        res.json(returnObjectsArray(comments.map(comment => ({
-          ...comment,
-          author: pick(comment.author, ['profile', 'username'])
-        }))));
+    const getThread = done => Thread.find({ parentType, parentId }).populate(' primaryComment ').exec().then(
+      threads => {
+        const existingComments = threads.map((thread) => thread.primaryComment._id);
+        const threadMap = threads.reduce((acc, curr) => {
+          const { primaryComment: { author } } = curr;
+          curr.comments = [];
+          return ({ ...acc, [curr._id]: curr })
+        }, {});
+        return done(null, threadMap, existingComments);
       },
-      err => handleErr(res, 500, 'Server error retrieving comments', err)
-    );
+      err => done({
+        message: 'Server error retriving comments.',
+        data: err,
+        status: 501
+      })
+    )
+
+    const getComments = (threads = {}, existingCommentIds = [], done) => {
+      const threadIds = Object.keys(threads)
+      Comment.find({
+        _id: { $nin: existingCommentIds },
+        parentType: { $in: [ parentType, 'Thread'] },
+        parentId: { $in: threadIds.concat(parentId) }
+      }).populate('author suggested_book').lean().exec().then(
+        comments => {
+          const mappedThreads = threadIds.map(id => threads[id]);
+          if (!comments || !comments.length) {
+            return done(null, mappedThreads);
+          }
+          const processComment = (comment, callBack) => {
+            const { parentId, parentType } = comment;
+            if (parentType !== 'Thread' || !threads[parentId]) {
+              new Thread({ parentId, parentType,
+                primaryComment: comment._id,
+                author: comment.author._id
+              }).save((error, savedThread) => {
+                if (error) {
+                  callBack({
+                    message: 'Server error retrieving threads',
+                    status: 501,
+                    data: error
+                  });
+                }
+                savedThread.primaryComment = comment;
+                threads[savedThread._id] = savedThread;
+                callBack();
+              })
+            }
+            threads[parentId].comments.push({
+              ...comment,
+              author: pick(comment.author, ['profile', 'username'])
+            });
+            return callback();
+          }
+          each(comments, processComment, (err) => {
+            if (err) {
+              return done(err);
+            }
+            const returnedThreads = Object.keys(threads).map(thread => threads[thread]);
+            return done(null, returnedThreads);
+          })
+
+        },
+        err => done({
+          message: 'Server error retrieving comments',
+          status: 501,
+          data: err
+        })
+      );
+    }
+
+    waterfall([getThread, getComments], (error, threads) => {
+      if (error && error.message && typeof error.message === 'string') {
+        return handleErr(res, error.status || 500, error.message || 'Could not retrieve comments at this time. Please try again later', error || false);
+      }
+      return res.json(returnObjectsArray(threads));
+    })
   },
   getManyForMany: (req, res) => {
     const { allRequests } = req.body;
@@ -65,50 +145,78 @@ module.exports = {
         text, parentType
       });
     }
-    const newComment = new Comment({ author, text, parentId, parentType, created: created instanceof Date ? created : new Date() });
 
-    if (suggested_book && !suggested_book.active) {
-      console.log('received a question. adding to new comment')
-      saveGBook(suggested_book, req.user, (err, savedBook) => {
-        if (err) {
-          return handleErr(res, 500, 'Could not add this question with your comment', err);
+    const createComment = done => {
+      const newComment = new Comment({ author, text, parentId, parentType, created: created instanceof Date ? created : new Date() });
+      if (suggested_book && !suggested_book.active) {
+        saveGBook(suggested_book, req.user, (err, savedBook) => {
+          if (err) {
+            return done({
+              message: 'Could not add this question with your comment',
+              status: 501,
+              data: err
+            })
+          }
+          newComment.suggested_book = savedBook._id;
+          newComment.save((err, comment) => {
+            if (err) {
+              return done({
+                message: 'Could not create your comment.',
+                status: 501,
+                daya: err
+              })
+            }
+            comment.author = pick(req.user, ['profile', 'username'])
+            Comment.populate(comment, [{ path: 'author' }, { path: 'suggested_book' }], (error, result) => {
+              if (error) {
+                return done(null, comment);
+              }
+              return done(null, result);
+            })
+          })
+        });
+      } else {
+        if (suggested_book && suggested_book._id) {
+          newComment.suggested_book = suggested_book._id
         }
-        newComment.suggested_book = savedBook._id;
-        console.log('created new question', savedBook._id, newComment);
         newComment.save((err, comment) => {
           if (err) {
-            return handleErr(res, 500, 'Could not create your comment.', err);
+            return done({
+              message: 'Could not create your comment.',
+              status: 501,
+              data: err
+            });
           }
-          console.log('finished with comment adding user before sending', req.user)
           comment.author = pick(req.user, ['profile', 'username'])
           Comment.populate(comment, [{ path: 'author' }, { path: 'suggested_book' }], (error, result) => {
             if (error) {
-              res.json(comment);
-              return;
+              return done(null, comment);
             }
-            return res.json(result)
+            return done(null, result);
           })
         })
-      });
-    } else {
-      if (suggested_book && suggested_book._id) {
-        newComment.suggested_book = suggested_book._id
       }
-      newComment.save((err, comment) => {
+    }
+    
+    const processThread = (newComment, done) => {
+      if (parentType === 'Thread') {
+        return done(null, newComment);
+      }
+      const newThread = new Thread({ parentId, parentType, primaryComment: newComment._id, author: req.user._id });
+      newThread.save((err, savedThread) => {
         if (err) {
-          return handleErr(res, 500, 'Could not create your comment.', err);
+          return done({
+            message: 'Sorry, could not create your comment. Please try again later.',
+            status: 501,
+            data: err
+          });
         }
-        console.log('finished with comment adding user before sending', req.user)
-        comment.author = pick(req.user, ['profile', 'username'])
-        Comment.populate(comment, [{ path: 'author' }, { path: 'suggested_book' }], (error, result) => {
-          if (error) {
-            res.json(comment);
-            return;
-          }
-          return res.json(result)
-        })
+
+        savedThread.primaryComment = newComment;
+        return done(null, savedThread);
       })
     }
+    waterfall([createComment, processThread], processEnd(res));
   },
   remove: (req, res) => {
     Comment.findByIdAndRemove(req.params.id, (err, response) => {

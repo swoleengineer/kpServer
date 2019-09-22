@@ -8,5 +8,7 @@ module.exports = app => {
   app.use('/report', require('../api/report'));
   app.use('/topic', require('../api/topic'));
   app.use('/user', require('../api/user'));
+  app.use('/stat', require('../api/stat'));
+  app.use('/shelf', require('../api/shelf'));
   app.use('*', undefinedRoute);
 }
