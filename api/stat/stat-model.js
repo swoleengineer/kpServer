@@ -5,7 +5,7 @@ const bookEntrySchema = new Schema({
   book: {
     type: Schema.Types.ObjectId,
     ref: 'Book',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   },
   topicWeight: {
     type: Number,
@@ -29,7 +29,7 @@ const skillSchema = new Schema({
   topic: {
     type: Schema.Types.ObjectId,
     ref: 'Topic',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   },
   description: String,
   goal: {

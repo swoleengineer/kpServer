@@ -6,7 +6,7 @@ const commentSchema = new Schema({
   author: {
     type: Schema.Types.ObjectId,
     ref: 'User',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   },
   text: String,
   parentId: String,
@@ -17,7 +17,7 @@ const commentSchema = new Schema({
   suggested_book: {
     type: Schema.Types.ObjectId,
     ref: 'Book',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   },
   accepted: {
     type: Boolean,
@@ -30,7 +30,7 @@ const commentSchema = new Schema({
   votes: [{
     type: Schema.Types.ObjectId,
     ref: 'User',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   }]
 })
 

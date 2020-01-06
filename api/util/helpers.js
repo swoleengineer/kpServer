@@ -1,5 +1,5 @@
-const Sentry = require('@sentry/node');
-const { omit, flatten } = require('lodash');
+// const Sentry = require('@sentry/node');
+const { omit, flatten, pick } = require('lodash');
 const sendEmail = require('./sendEmail');
 const jwt = require('jsonwebtoken');
 const moment = require('moment');
@@ -10,6 +10,7 @@ const Author = require('../author/author-model');
 const Topic = require('../topic/topic-model');
 const { waterfall, each } = require('async');
 const cloudinary = require('cloudinary');
+const thirdParty = require('./thirdPartyData');
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -21,7 +22,7 @@ module.exports = {
   returnObjectsArray: arr => ({ amount: arr.length, data: [...arr] }),
   handleErr: (res, status, message, data) => {
     console.log(status, message, data);
-    Sentry.captureException({ status, message, data });
+    // Sentry.captureException({ status, message, data });
     if (status === 500) return res.status(500).send({
       message: data && data.name === 'MongoError' && data.errmsg.includes('duplicate')
         ? 'Something here is a duplicate of a previous one.'
@@ -30,8 +31,8 @@ module.exports = {
       });
     return res.status(status).send({ message, data });
   },
-  logError: (payload) => Sentry.captureException(payload),
-  undefinedRoute: (req, res) => res.status(404).send({ message: 'You have reached an undefined route. The KeenPages server does not have this endpoint configured.' }),
+  logError: (payload) => null // Sentry.captureException(payload),
+  ,undefinedRoute: (req, res) => res.status(404).send({ message: 'You have reached an undefined route. The KeenPages server does not have this endpoint configured.' }),
   isLoggedIn: (req, res, next) => {
     const message = 'You must be authorized to access this resource.';
     const token = req.body.token || req.query.token || req.headers['x-access-token'];
@@ -63,7 +64,7 @@ module.exports = {
       iss: 'keenpages.com',
       role: user.role,
       sub: user._id,
-      user: omit(user, ['resetPasswordExpires', 'resetPasswordToken', 'role', 'password']),
+      user: pick(user, ['profile', 'email', 'username', 'role', 'created']),
       exp: moment().add(10, 'days').unix()
     }
     return jwt.sign(payload, process.env.SECRET);
@@ -254,5 +255,6 @@ module.exports = {
     waterfall([processAuthor, processTopics, processImages, processBook], callback);
   },
   sendEmail,
+  thirdParty,
   acceptableTypes: ['Book', 'Question', 'Topic', 'Comment', 'Shelf', 'Thread']
 }

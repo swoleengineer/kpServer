@@ -26,7 +26,7 @@ const shelfSchema = new Schema({
   books: [{
     type: Schema.Types.ObjectId,
     ref: 'Book',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   }],
   public: {
     type: Boolean,
@@ -35,12 +35,12 @@ const shelfSchema = new Schema({
   followers: [{
     type: Schema.Types.ObjectId,
     ref: 'User',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   }],
   owner: {
     type: Schema.Types.ObjectId,
     ref: 'User',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   },
   integratedType: {
     type: String,

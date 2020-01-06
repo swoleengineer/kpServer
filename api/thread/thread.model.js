@@ -15,17 +15,17 @@ const threadSchema = new Schema({
   author: {
     type: Schema.Types.ObjectId,
     ref: 'User',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   },
   primaryComment: {
     type: Schema.Types.ObjectId,
     ref: 'Comment',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   },
   edits: [{
     type: Schema.Types.ObjectId,
     ref: 'Comment',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   }],
   created: {
     type: Date,

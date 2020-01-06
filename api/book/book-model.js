@@ -14,7 +14,9 @@ const topicSchema = new Schema({
   topic: {
     type: Schema.Types.ObjectId,
     ref: 'Topic',
-    autopopulate: true
+    autopopulate: {
+      maxDepth: 3
+    }
   },
   agreed: [{
     type: Schema.Types.ObjectId,
@@ -28,6 +30,14 @@ const topicSchema = new Schema({
 
 topicSchema.plugin(require('mongoose-autopopulate'));
 
+const thirdPartyDataSchema = new Schema({
+  provider: String,
+  updated: {
+    type: Date,
+    default: new Date()
+  },
+  data: Schema.Types.Mixed
+})
 const bookSchema = new Schema({
   gId: String,
   gTag: String,
@@ -42,12 +52,16 @@ const bookSchema = new Schema({
   author: {
     type: Schema.Types.ObjectId,
     ref: 'Author',
-    autopopulate: true
+    autopopulate: {
+      maxDepth: 3
+    }
   },
   authors: [{
     type: Schema.Types.ObjectId,
     ref: 'Author',
-    autopopulate: true
+    autopopulate: {
+      maxDepth: 3
+    }
   }],
   views: {
     type: Number,
@@ -80,8 +94,11 @@ const bookSchema = new Schema({
   createdBy: {
     type: Schema.Types.ObjectId,
     ref: 'User',
-    autopopulate: true
-  }
+    autopopulate: {
+      maxDepth: 3
+    }
+  },
+  thirdPartyData: [thirdPartyDataSchema]
 });
 
 bookSchema.plugin(require('mongoose-autopopulate'));

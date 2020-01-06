@@ -36,12 +36,12 @@ const userSchema = new Schema({
   savedBooks: [{
     type: Schema.Types.ObjectId,
     ref: 'Book',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   }],
   readBooks: [{
     type: Schema.Types.ObjectId,
     ref: 'Book',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   }],
   listPublicStatus: {
     readBooks: {
@@ -88,7 +88,7 @@ const userSchema = new Schema({
   myShelves: [{
     type: Schema.Types.ObjectId,
     ref: 'Shelf',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   }],
   followedShelves: [{
     type: Schema.Types.ObjectId,

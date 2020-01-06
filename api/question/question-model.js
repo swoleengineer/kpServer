@@ -5,7 +5,7 @@ const topicSchema = new Schema({
   topic: {
     type: Schema.Types.ObjectId,
     ref: 'Topic',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   },
   agreed: [{
     type: Schema.Types.ObjectId,
@@ -24,7 +24,7 @@ const questionSchema = new Schema({
   author: {
     type: Schema.Types.ObjectId,
     ref: 'User',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   },
   title: String,
   topics: [topicSchema],

@@ -15,7 +15,7 @@ const topicSchema = new Schema({
   similar: [{
     type: Schema.Types.ObjectId,
     ref: 'Topic',
-    autopopulate: true
+    autopopulate: { maxDepth: 3 }
   }]
 });
 

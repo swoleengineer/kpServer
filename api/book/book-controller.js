@@ -1,7 +1,7 @@
 const Book = require('./book-model');
 const Topic = require('../topic/topic-model');
 const Author = require('../author/author-model');
-const { getUnique, handleErr, returnObjectsArray, downloadImg, searchGoogleBooks, processGBook } = require('../util/helpers');
+const { getUnique, thirdParty, handleErr, returnObjectsArray, downloadImg, searchGoogleBooks, processGBook } = require('../util/helpers');
 const sendEmail = require('../util/sendEmail');
 const { waterfall, each } = require('async');
 const { has, omit, flatten } = require('lodash');
@@ -19,6 +19,9 @@ cloudinary.config({
 });
 
 const processEnd = res => (err, data) => {
+  if (typeof err === 'boolean' && err) {
+    return;
+  }
   if (err && typeof err === 'object' && has(err, ['data', 'status', 'message'])) {
     console.log('One error occured', err)
     return handleErr(res, err.status, err.message, err.data);
@@ -37,7 +40,6 @@ module.exports = {
     const { authors: scribes = [], topics: cats = [], pictures: pix = []} = req.body;
     const authors = scribes.map(person => person.name);
     const categories = flatten(cats.map(topic => topic.topic.name));
-    console.log('the topics to add ', categories)
     const imageLinks = {
       thumbnail: pix.length ? pix[0].link : undefined
     }
@@ -56,23 +58,63 @@ module.exports = {
         book => {
           if (book) {
             res.json(book);
-            done(null,book);
+            return done(true);
+            
           }
           done(null);
         },
         err => done(null)
       )
     };
-
-    const processAuthor = done => {
-      console.log('Processing authors', authors)
-      if (!authors.length) {
-        return done(null, []);
+    
+    const getThirdPartyData = done => {
+      const { isbn10 = undefined, isbn13 = undefined } = bookPayload;
+      if (!isbn10 && !isbn13) {
+        return done(null, { status: 400 });
       }
-      Author.find({ name: { $in: authors }}).exec().then(
+      const providers = ['goodReads', 'openLibary'];
+      const thirdPartyData = { providers, status: 200 };
+      const dataFetchMap = {
+        goodReads: thirdParty.getGoodReadsData,
+        openLibary: thirdParty.openLibraryData
+      }
+      const processProvider = (provider, callback) => {
+        return dataFetchMap[provider](isbn10 || isbn13).then(
+          res => {
+            // const { data = undefined } = res;
+            thirdPartyData[provider] = res.data;
+            return callback();
+          },
+          err => {
+            return callback(err);
+          }
+        )
+      }
+
+      return each(providers, processProvider, err => {
+        if (err) {
+          console.log({ typofDone: typeof done });
+          return done(null, { status: 500 });
+        }
+        console.log('got third party data', thirdPartyData);
+        return done(null, thirdPartyData);
+      });
+    }
+
+    const processAuthor = (thirdPartyData, done) => {
+      console.log('Processing authors', authors)
+      let queryAuthors = [...authors]
+      if (thirdPartyData['openLibary']) {
+        const { authors: olAuthors = [] } = thirdPartyData['openLibary'] || {};
+        queryAuthors = queryAuthors.concat(olAuthors);
+      }
+      if (!authors.length) {
+        return done(null, [], thirdPartyData);
+      }
+      Author.find({ name: { $in: queryAuthors }}).exec().then(
         writers => {
           if (writers.length) {
-            return done(null, writers);
+            return done(null, writers, thirdPartyData);
           }
           const newAuthors = [];
           const createNewAuthor = (name, cb) => {
@@ -97,7 +139,7 @@ module.exports = {
               return done(err);
             }
             console.log('Successfully processed authors')
-            return done(null, newAuthors);
+            return done(null, newAuthors, thirdPartyData);
           })
         },
         err => done({
@@ -108,20 +150,26 @@ module.exports = {
       )
     };
 
-    const processTopics = (writers, done) => {
+    const processTopics = (writers, thirdPartyData, done) => {
       console.log('Processing topics', categories);
-      if (!categories.length) {
-        console.log('there are no topics to add')
-        return done(null, [], writers);
+      let allTopics = [...categories];
+      if (thirdPartyData['openLibary']) {
+        const { subjects } = thirdPartyData['openLibary'] || {};
+        allTopics = allTopics.concat(subjects.map(s => s.name))
       }
-      Topic.find({ name: { $in: categories }}).exec().then(
+      if (!allTopics.length) {
+        console.log('there are no topics to add')
+        return done(null, [], writers, thirdPartyData);
+      }
+      Topic.find({ name: { $in: allTopics }}).exec().then(
         topics => {
           console.log('finished searching for topics.')
-          if (topics.length) {
+          if (topics.length === allTopics.length) {
             console.log(`there are ${topics.length} that match, here is the first.`, topics[0])
-            return done(null, topics, writers);
+            return done(null, topics, writers, thirdPartyData);
           }
-          const newTopics = [];
+          const foundTopics = topics.map(top => top.name);
+          const newTopics = allTopics.filter(tp => foundTopics.includes(tp));
           const createNewTopic = (name, cb) => {
             console.log('Creating new topic: ' + name);
             const newTopic = new Topic({ name, active: true });
@@ -139,12 +187,12 @@ module.exports = {
               cb();
             })
           }
-          each(categories, createNewTopic, err => {
+          each(allTopics.filter(tp => !foundTopics.includes(tp)), createNewTopic, err => {
             if (err) {
               return done(err);
             }
             console.log('successfully processed topics', newTopics)
-            done(null, newTopics, writers);
+            done(null, newTopics, writers, thirdPartyData);
           })
         },
         err => done({
@@ -155,28 +203,28 @@ module.exports = {
       )
     }
 
-    const processImages = (topics, writers, done) => {
+    const processImages = (topics, writers, thirdPartyData, done) => {
       console.log('saving images')
       const { thumbnail = undefined , smallThumbnail = undefined } = imageLinks;
       if (!thumbnail && !smallThumbnail) {
         console.log('NO images to save.')
-        return done(null, false, topics, writers);
+        return done(null, false, topics, writers, thirdPartyData);
       }
       console.log('got images to save.', thumbnail || smallThumbnail);
       cloudinary.uploader.upload(thumbnail || smallThumbnail, (result) => {
         if (result.error) {
           console.log('cloudinary error', result.error);
-          return done(null, false, topics, writers);
+          return done(null, false, topics, writers, thirdPartyData);
         }
         const image = {
           link: result.secure_url,
           public_id:result.public_id
         };
         console.log('Successfully processed images', image);
-        return done(null, image, topics, writers);
+        return done(null, image, topics, writers, thirdPartyData);
       })
     }
-    const processBook = (image, topics, writers, done) => {
+    const processBook = (image, topics, writers, thirdPartyData, done) => {
       console.log('processing book. here are topics', topics[0])
       const newBook = new Book({
         ...bookPayload,
@@ -186,6 +234,7 @@ module.exports = {
           topic: topic._id,
           agreed: []
         })),
+        thirdPartyData: Object.keys(omit(thirdPartyData, ['providers', 'status'])).reduce((x, y) => [...x, { provider: y, data: thirdPartyData[y]}], [])
       });
       if (image) {
         newBook.pictures = [ image ];
@@ -200,6 +249,7 @@ module.exports = {
           });
         }
         console.log('successfully saved book')
+
         Book.populate(savedBook,[{
           path: 'authors'
         }, {
@@ -215,7 +265,7 @@ module.exports = {
       });
     }
 
-    waterfall([validate, processAuthor, processTopics, processImages, processBook], processEnd(res));
+    waterfall([validate, getThirdPartyData, processAuthor, processTopics, processImages, processBook], processEnd(res));
   },
   add: (req, res) => {
     const { title, writer, topics, isbn, amazon_link } = req.body;
