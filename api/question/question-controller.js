@@ -24,14 +24,14 @@ module.exports = {
     }
     const text = decodeURI(word);
     const hit = new RegExp("^" + text, "i")
-    const keenQuery = Question.find({ $or: [{ title: hit }, { text: hit }], _id: { $nin: already} }).populate('author topics.agreed ').lean();
+    const keenQuery = Question.find({ $or: [{ title: hit }, { text: hit }], _id: { $nin: already} }).lean();
     keenQuery.exec().then(
       questions => res.json(returnObjectsArray(questions || [])),
       err => handleErr(res, 500, 'Could not search for questions')
     )
   },
   getAll: (req, res) => {
-    Question.find().populate('author topics.topic').exec().then(
+    Question.find().exec().then(
       questions => res.json(returnObjectsArray(questions)),
       err => handleErr(res, 500, '', err)
     )
@@ -261,7 +261,7 @@ module.exports = {
 
     waterfall([validateRequest, getSimilarTopics, getMainQuestions], processEnd(res));
   },
-  getOne: (req, res) => Question.findById(req.params.id).populate('author topics.topic topics.agreed').lean().exec().then(
+  getOne: (req, res) => Question.findById(req.params.id).lean().exec().then(
     question => {
       if (!question) {
         return handleErr(res, 404, 'Question not found.', false);

@@ -15,13 +15,13 @@ module.exports = {
     if (!id) {
       return handleErr(res, 400, 'Please try your request again. Missing :id property', false);
     }
-    Topic.findById(id).populate('similar').exec().then(
+    Topic.findById(id).exec().then(
       topic => !topic ? handleErr(res, 404,'Topic not found.', false) : res.json(topic),
       err => handleErr(res, 500, 'Error retriving topic.', err)
     );
   },
   getAll: (req, res) => {
-    Topic.find().populate('similar').exec().then(
+    Topic.find().exec().then(
       topics => res.json(returnObjectsArray(topics)),
       err => handleErr(res, 500)
     );
@@ -38,7 +38,7 @@ module.exports = {
         { description: hit }
       ]
     };
-    Topic.find(query).populate('similar').exec().then(
+    Topic.find(query).exec().then(
       topics => res.json(returnObjectsArray(topics)),
       err => handleErr(res, 501, 'Server error searching for your topics', err)
     )

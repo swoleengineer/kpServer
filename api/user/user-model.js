@@ -35,13 +35,11 @@ const userSchema = new Schema({
   },
   savedBooks: [{
     type: Schema.Types.ObjectId,
-    ref: 'Book',
-    autopopulate: { maxDepth: 3 }
+    ref: 'Book'
   }],
   readBooks: [{
     type: Schema.Types.ObjectId,
-    ref: 'Book',
-    autopopulate: { maxDepth: 3 }
+    ref: 'Book'
   }],
   listPublicStatus: {
     readBooks: {
@@ -87,16 +85,13 @@ const userSchema = new Schema({
   },
   myShelves: [{
     type: Schema.Types.ObjectId,
-    ref: 'Shelf',
-    autopopulate: { maxDepth: 3 }
+    ref: 'Shelf'
   }],
   followedShelves: [{
     type: Schema.Types.ObjectId,
     ref: 'Shelf'
   }]
 });
-
-userSchema.plugin(require('mongoose-autopopulate'));
 
 userSchema.methods.toJSON = function() {
   const user = this.toObject();
@@ -111,5 +106,15 @@ userSchema.methods.generateHash = password => {
 userSchema.methods.validPassword = function(password) {
   return bcrypt.compareSync(password, this.password);
 };
+
+userSchema.pre('find', function pop(next) {
+  this.populate('myShelves readBooks savedBooks');
+  next();
+});
+
+userSchema.pre('findOne', function pop(next) {
+  this.populate('myShelves readBooks savedBooks');
+  next();
+})
 
 module.exports = mongoose.model('User', userSchema);

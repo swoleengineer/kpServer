@@ -24,7 +24,7 @@ module.exports = {
     if (!parentType || !acceptableTypes.includes(parentType) || !parentId) {
       return handleErr(res, 400, 'Please try your request again. Missing important params', { parentType, parentId });
     }
-    const getThread = done => Thread.find({ parentType, parentId }).populate(' primaryComment ').exec().then(
+    const getThread = done => Thread.find({ parentType, parentId }).exec().then(
       threads => {
         const existingComments = threads.map((thread) => thread.primaryComment._id);
         const threadMap = threads.reduce((acc, curr) => {
@@ -47,7 +47,7 @@ module.exports = {
         _id: { $nin: existingCommentIds },
         parentType: { $in: [ parentType, 'Thread'] },
         parentId: { $in: threadIds.concat(parentId) }
-      }).populate('author suggested_book').lean().exec().then(
+      }).lean().exec().then(
         comments => {
           const mappedThreads = threadIds.map(id => threads[id]);
           if (!comments || !comments.length) {
@@ -110,7 +110,7 @@ module.exports = {
     Comment.find({
       'parentId': { $in: allRequests.map(request => request.parentId )},
       'parentType': allRequests[0].parentType
-    }).populate('author suggested_book').exec().then(
+    }).exec().then(
       (comments) => {
         if (!comments || !comments.length) {
           return handleErr(res, 404, 'Comments not found.', false)

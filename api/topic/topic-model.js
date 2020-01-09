@@ -14,11 +14,8 @@ const topicSchema = new Schema({
   },
   similar: [{
     type: Schema.Types.ObjectId,
-    ref: 'Topic',
-    autopopulate: { maxDepth: 3 }
+    ref: 'Topic'
   }]
 });
-
-topicSchema.plugin(require('mongoose-autopopulate'));
 
 module.exports = mongoose.model('Topic', topicSchema);

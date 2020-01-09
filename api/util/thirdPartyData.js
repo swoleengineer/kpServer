@@ -27,9 +27,11 @@ const getBookdata = (isbn = '', format = 'json', jscmd = 'data') => {
 const grKey = process.env.GOODREADS_KEY;
 const grUrl = isbn => console.log('about to get good Reads info') || `https://www.goodreads.com/book/isbn/${isbn}?format=xml&key=${grKey}`;
 const processBook = liv => {
+  console.log(liv);
   const { id: [id], title: [title], description: [description], image_url: [image_001], authors = [], reviews_widget: [reviews_widget], similar_books = [] } = liv;
-  const writers = authors.map((author) => {
-    const { id: [authorId], name: [authorName], image_url: [authorPicture], link: [link]} = author;
+  const writers = (authors || []).map((author) => {
+  
+    const { id: [authorId = ''] = [], name: [authorName = ''], image_url: [authorPicture = ''], link: [link = '']} = author;
     const { ['-']: url = '', '$': info = {} } = authorPicture;
     const authorBody = { authorId, authorName, reviews_widget };
     const { nophoto = 'false' } = info;
@@ -73,6 +75,6 @@ const processXml = ({ data: xml }) => parseString(xml, (err, result) => {
 })
 
 module.exports = {
-  getGoodReadsData: isbn => axios.get(grUrl(isbn)).then(processXml, err => Promise.reject(err)),
+  getGoodReadsData: isbn => axios.get(grUrl(isbn)).then(res => console.log(res.data, '<-- data from good reads') || processXml(res), err => Promise.reject(err)),
   openLibraryData: getBookdata
 } 

@@ -79,13 +79,16 @@ module.exports = {
         openLibary: thirdParty.openLibraryData
       }
       const processProvider = (provider, callback) => {
+        console.log('processing ' + provider);
         return dataFetchMap[provider](isbn10 || isbn13).then(
           res => {
             // const { data = undefined } = res;
             thirdPartyData[provider] = res.data;
+            console.log(`${provider} - success: `, res.data);
             return callback();
           },
           err => {
+      
             return callback(err);
           }
         )
@@ -93,8 +96,8 @@ module.exports = {
 
       return each(providers, processProvider, err => {
         if (err) {
-          console.log({ typofDone: typeof done });
-          return done(null, { status: 500 });
+          console.log(err);
+          return done(null, { ...thirdPartyData, status: 500 });
         }
         console.log('got third party data', thirdPartyData);
         return done(null, thirdPartyData);
@@ -106,7 +109,7 @@ module.exports = {
       let queryAuthors = [...authors]
       if (thirdPartyData['openLibary']) {
         const { authors: olAuthors = [] } = thirdPartyData['openLibary'] || {};
-        queryAuthors = queryAuthors.concat(olAuthors);
+        queryAuthors = queryAuthors.concat(olAuthors.map(auth => auth.name || ''));
       }
       if (!authors.length) {
         return done(null, [], thirdPartyData);
@@ -154,7 +157,7 @@ module.exports = {
       console.log('Processing topics', categories);
       let allTopics = [...categories];
       if (thirdPartyData['openLibary']) {
-        const { subjects } = thirdPartyData['openLibary'] || {};
+        const { subjects = [] } = thirdPartyData['openLibary'] || {};
         allTopics = allTopics.concat(subjects.map(s => s.name))
       }
       if (!allTopics.length) {
@@ -473,7 +476,7 @@ module.exports = {
     if (!id) {
       return handleErr(res, 401, 'Please try your request again.');
     }
-    Book.findById(id).populate('author topics.agreed topics.topic').exec().then(
+    Book.findById(id).exec().then(
       book => {
         if (!book) {
           return handleErr(res, 404, 'Book not found', book);
@@ -490,7 +493,7 @@ module.exports = {
     );
   },
   getByAuthor: (req, res) => {
-    Book.find({ author: req.params.id }).populate('author topics.agreed topics.topic').exec().then(
+    Book.find({ author: req.params.id }).exec().then(
       books => res.json(returnObjectsArray(books)),
       err => handleErr(res, 500, 'Server error retrieving books for this author.', err)
     )
@@ -609,7 +612,7 @@ module.exports = {
     waterfall([validateRequest, getSimilarTopics, getMainBooks], processEnd(res));
   },
   getAll: (req, res) => {
-    Book.find().populate('author topics.topic').limit(50).exec().then(
+    Book.find().limit(50).exec().then(
       books => res.json(returnObjectsArray(books)),
       err => handleErr(res, 501, 'Server error retrieving your books', err)
     )
@@ -648,7 +651,7 @@ module.exports = {
     }
     const text = decodeURI(word);
     const hit = new RegExp("^" + text, "i")
-    const keenQuery = Book.find({ $or: [{ title: hit }, { description: hit }] }).populate('author topics.agreed ');
+    const keenQuery = Book.find({ $or: [{ title: hit }, { description: hit }] });
     
     const searchGoogle = done => searchGoogleBooks(text).then(
       response => {

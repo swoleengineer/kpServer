@@ -5,8 +5,7 @@ const { acceptableTypes } = require('../util/helpers')
 const commentSchema = new Schema({
   author: {
     type: Schema.Types.ObjectId,
-    ref: 'User',
-    autopopulate: { maxDepth: 3 }
+    ref: 'User'
   },
   text: String,
   parentId: String,
@@ -16,8 +15,7 @@ const commentSchema = new Schema({
   },
   suggested_book: {
     type: Schema.Types.ObjectId,
-    ref: 'Book',
-    autopopulate: { maxDepth: 3 }
+    ref: 'Book'
   },
   accepted: {
     type: Boolean,
@@ -29,11 +27,13 @@ const commentSchema = new Schema({
   },
   votes: [{
     type: Schema.Types.ObjectId,
-    ref: 'User',
-    autopopulate: { maxDepth: 3 }
+    ref: 'User'
   }]
 })
 
-commentSchema.plugin(require('mongoose-autopopulate'));
+commentSchema.pre('find', function pop(next) {
+  this.populate('author suggested_book');
+  next();
+})
 
 module.exports = mongoose.model('Comment', commentSchema);

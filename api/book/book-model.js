@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
+
 const pictureSchema = new Schema({
   default: {
     type: Boolean,
@@ -13,10 +14,7 @@ const pictureSchema = new Schema({
 const topicSchema = new Schema({
   topic: {
     type: Schema.Types.ObjectId,
-    ref: 'Topic',
-    autopopulate: {
-      maxDepth: 3
-    }
+    ref: 'Topic'
   },
   agreed: [{
     type: Schema.Types.ObjectId,
@@ -26,9 +24,7 @@ const topicSchema = new Schema({
     type: Date,
     default: new Date()
   }
-})
-
-topicSchema.plugin(require('mongoose-autopopulate'));
+});
 
 const thirdPartyDataSchema = new Schema({
   provider: String,
@@ -51,17 +47,11 @@ const bookSchema = new Schema({
   publisher: String,
   author: {
     type: Schema.Types.ObjectId,
-    ref: 'Author',
-    autopopulate: {
-      maxDepth: 3
-    }
+    ref: 'Author'
   },
   authors: [{
     type: Schema.Types.ObjectId,
-    ref: 'Author',
-    autopopulate: {
-      maxDepth: 3
-    }
+    ref: 'Author'
   }],
   views: {
     type: Number,
@@ -93,14 +83,14 @@ const bookSchema = new Schema({
   },
   createdBy: {
     type: Schema.Types.ObjectId,
-    ref: 'User',
-    autopopulate: {
-      maxDepth: 3
-    }
+    ref: 'User'
   },
   thirdPartyData: [thirdPartyDataSchema]
 });
 
-bookSchema.plugin(require('mongoose-autopopulate'));
+bookSchema.pre('find', function pop(next) {
+  this.populate('author authors topics.topic');
+  next();
+})
 
 module.exports = mongoose.model('Book', bookSchema);

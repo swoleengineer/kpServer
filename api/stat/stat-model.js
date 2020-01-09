@@ -4,8 +4,7 @@ const Schema = mongoose.Schema;
 const bookEntrySchema = new Schema({
   book: {
     type: Schema.Types.ObjectId,
-    ref: 'Book',
-    autopopulate: { maxDepth: 3 }
+    ref: 'Book'
   },
   topicWeight: {
     type: Number,
@@ -28,8 +27,7 @@ const snapShotSchema = new Schema({
 const skillSchema = new Schema({
   topic: {
     type: Schema.Types.ObjectId,
-    ref: 'Topic',
-    autopopulate: { maxDepth: 3 }
+    ref: 'Topic'
   },
   description: String,
   goal: {
@@ -68,6 +66,9 @@ const statSchema = new Schema({
   }
 });
 
-statSchema.plugin(require('mongoose-autopopulate'));
+statSchema.pre('find', function pop(next) {
+  this.populate('figures.topic figures.snapShots.book');
+  next();
+});
 
 module.exports = mongoose.model('Stat', statSchema);

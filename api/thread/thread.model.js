@@ -14,18 +14,15 @@ const threadSchema = new Schema({
   },
   author: {
     type: Schema.Types.ObjectId,
-    ref: 'User',
-    autopopulate: { maxDepth: 3 }
+    ref: 'User'
   },
   primaryComment: {
     type: Schema.Types.ObjectId,
-    ref: 'Comment',
-    autopopulate: { maxDepth: 3 }
+    ref: 'Comment'
   },
   edits: [{
     type: Schema.Types.ObjectId,
-    ref: 'Comment',
-    autopopulate: { maxDepth: 3 }
+    ref: 'Comment'
   }],
   created: {
     type: Date,
@@ -34,5 +31,10 @@ const threadSchema = new Schema({
 });
 
 threadSchema.plugin(require('mongoose-autopopulate'));
+
+threadSchema.pre('find', function pop(next) {
+  this.populate('edits author primaryComment');
+  next();
+});
 
 module.exports = mongoose.model('Thread', threadSchema);

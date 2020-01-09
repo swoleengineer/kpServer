@@ -34,7 +34,7 @@ module.exports = {
     // if it is not an integrated, and can't be found. return nothing.
     const { username, shelfTitle } = req.body;
     const { _id: currentUserId = undefined } = req.user || { _id: undefined };
-    const getUser = done => User.findOne({ username }).populate(' myShelves ').exec().then(
+    const getUser = done => User.findOne({ username }).exec().then(
       account => {
         if (!account) {
           return done({

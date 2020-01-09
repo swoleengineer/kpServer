@@ -25,8 +25,7 @@ const shelfSchema = new Schema({
   },
   books: [{
     type: Schema.Types.ObjectId,
-    ref: 'Book',
-    autopopulate: { maxDepth: 3 }
+    ref: 'Book'
   }],
   public: {
     type: Boolean,
@@ -34,13 +33,11 @@ const shelfSchema = new Schema({
   },
   followers: [{
     type: Schema.Types.ObjectId,
-    ref: 'User',
-    autopopulate: { maxDepth: 3 }
+    ref: 'User'
   }],
   owner: {
     type: Schema.Types.ObjectId,
-    ref: 'User',
-    autopopulate: { maxDepth: 3 }
+    ref: 'User'
   },
   integratedType: {
     type: String,
@@ -55,5 +52,9 @@ const shelfSchema = new Schema({
   updates: [updatesSchema]
 });
 
-shelfSchema.plugin(require('mongoose-autopopulate'));
+shelfSchema.pre('find', function pop(next) {
+  this.populate('owner followers');
+  next();
+});
+
 module.exports = mongoose.model('Shelf', shelfSchema);
