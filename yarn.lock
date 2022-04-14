@@ -198,11 +198,15 @@ assured@^1.0.12:
     noop6 "^1.0.1"
     sliced "^1.0.1"
 
-async@2.6.2, async@^2.6.2:
+async@2.6.2:
   version "2.6.2"
   resolved "https://registry.yarnpkg.com/async/-/async-2.6.2.tgz#18330ea7e6e313887f5d2f2a904bac6fe4dd5381"
   dependencies:
     lodash "^4.17.11"
+
+async@^3.2.2:
+  version "3.2.2"
+  resolved "https://registry.yarnpkg.com/async/-/async-3.2.2.tgz#2eb7671034bb2194d45d30e31e24ec7e7f9670cd"
 
 asynckit@^0.4.0:
   version "0.4.0"
